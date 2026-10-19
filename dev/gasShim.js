@@ -189,15 +189,43 @@ class FakeSpreadsheet {
 
 // ===== 載入 GAS 程式碼 =====
 
+/** 從 JSON 還原記憶體試算表 (轉接站重開後保留對話記憶與配額) */
+function restoreSpreadsheets(data) {
+  const out = {};
+  for (const [id, ss] of Object.entries(data || {})) {
+    out[id] = new FakeSpreadsheet(ss.name, id);
+    for (const [name, rows] of Object.entries(ss.sheets || {})) {
+      out[id].insertSheet(name).rows = rows;
+    }
+  }
+  return out;
+}
+
+function dumpSpreadsheets(spreadsheets) {
+  const data = {};
+  for (const [id, ss] of Object.entries(spreadsheets)) {
+    data[id] = { name: ss.name, sheets: {} };
+    for (const [name, sheet] of Object.entries(ss.sheets)) data[id].sheets[name] = sheet.rows;
+  }
+  return data;
+}
+
 /**
  * 建立 GAS 模擬環境並載入 src/*.js
  * options.props：指令碼屬性；options.fetch：UrlFetchApp.fetch 的實作 (預設不連網)
- * 回傳 {context, get(name), set(name, value), props, spreadsheets, logs}
+ * options.dataFile：記憶體試算表存檔位置 (選用，呼叫 save() 寫入)
+ * options.files：要載入的檔案 (預設 src/*.js)
+ * 回傳 {context, get(name), set(name, value), props, spreadsheets, logs, save()}
  */
 function loadGas(options = {}) {
   const props = Object.assign({}, options.props || {});
   const cache = new Map();
-  const spreadsheets = {};
+  let spreadsheets = {};
+  if (options.dataFile && fs.existsSync(options.dataFile)) {
+    const saved = JSON.parse(fs.readFileSync(options.dataFile, 'utf8'));
+    spreadsheets = restoreSpreadsheets(saved.spreadsheets);
+    if (saved.spreadsheetId && !props.SPREADSHEET_ID) props.SPREADSHEET_ID = saved.spreadsheetId;
+  }
   const logs = [];
   let fetchImpl = options.fetch || offlineFetch;
 
@@ -265,14 +293,26 @@ function loadGas(options = {}) {
         return spreadsheets[id];
       },
     },
-    ContentService: { createTextOutput: (text) => ({ getContent: () => text }) },
+    ContentService: {
+      MimeType: { JSON: 'application/json', TEXT: 'text/plain' },
+      createTextOutput: (text) => {
+        let mimeType = 'text/plain';
+        const output = {
+          getContent: () => text,
+          getMimeType: () => mimeType,
+          setMimeType: (m) => { mimeType = m; return output; },
+        };
+        return output;
+      },
+    },
   };
 
   const context = vm.createContext(sandbox);
-  const files = fs.readdirSync(SRC_DIR).filter((f) => f.endsWith('.js')).sort();
+  const files = options.files || fs.readdirSync(SRC_DIR).filter((f) => f.endsWith('.js')).sort()
+    .map((f) => path.join(SRC_DIR, f));
   for (const file of files) {
-    const code = fs.readFileSync(path.join(SRC_DIR, file), 'utf8');
-    vm.runInContext(code, context, { filename: `src/${file}` });
+    const code = fs.readFileSync(file, 'utf8');
+    vm.runInContext(code, context, { filename: path.relative(path.join(__dirname, '..'), file) });
   }
 
   return {
@@ -293,6 +333,13 @@ function loadGas(options = {}) {
       vm.runInContext('resetConfigCache_()', context);
     },
     setFetch: (fn) => { fetchImpl = fn; },
+    /** 把記憶體試算表寫入 options.dataFile */
+    save: () => {
+      if (!options.dataFile) return;
+      fs.mkdirSync(path.dirname(options.dataFile), { recursive: true });
+      const data = { spreadsheetId: props.SPREADSHEET_ID || '', spreadsheets: dumpSpreadsheets(spreadsheets) };
+      fs.writeFileSync(options.dataFile, JSON.stringify(data));
+    },
   };
 }
 

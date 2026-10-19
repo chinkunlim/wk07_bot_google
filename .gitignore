@@ -5,9 +5,10 @@ node_modules/
 .clasp.json
 .clasprc.json
 
-# 本機模擬用的設定與資料
+# 本機模擬 / 轉接站的設定與資料 (含金鑰、對話紀錄)
 .env
 .sim-data/
+.relay-data/
 
 # macOS
 .DS_Store

@@ -5,6 +5,7 @@
 
 const SUPPORTED_SEARCH_ENGINES = ['duckduckgo', 'google_news', 'multi'];
 const SUPPORTED_SEARCH_DECISIONS = ['router', 'tools'];
+const SUPPORTED_RELAY_MODES = ['auto', 'off'];
 
 // 字串預設值；數字欄位於 getConfig 轉型
 const CONFIG_DEFAULTS = {
@@ -42,6 +43,10 @@ const CONFIG_DEFAULTS = {
   // === 對話 / 配額 ===
   MAX_HISTORY_TURNS: '4',
   MAX_DAILY_REQUESTS: '50',
+
+  // === 轉接站 ===
+  // auto：電腦上的轉接站 (npm run relay) 在線時由它回答，離線時 GAS 自己回答；off：一律 GAS 回答
+  RELAY_MODE: 'auto',
 
   // === 儲存 ===
   // 對話歷史 / 配額 / 日誌的試算表；留空時第一次執行自動建立並寫回
@@ -122,6 +127,9 @@ function validateConfig(cfg, requireTelegram) {
   if (!cfg.GEMINI_API_KEY) errors.push('GEMINI_API_KEY 未設定 (到 https://aistudio.google.com/apikey 建立)');
   if (!SUPPORTED_SEARCH_DECISIONS.includes(cfg.SEARCH_DECISION)) {
     errors.push(`SEARCH_DECISION=${cfg.SEARCH_DECISION} 不支援 (可用: ${SUPPORTED_SEARCH_DECISIONS.join(' | ')})`);
+  }
+  if (!SUPPORTED_RELAY_MODES.includes(cfg.RELAY_MODE)) {
+    errors.push(`RELAY_MODE=${cfg.RELAY_MODE} 不支援 (可用: ${SUPPORTED_RELAY_MODES.join(' | ')})`);
   }
   if (cfg.SEARCH_FALLBACK_ENGINE && !SUPPORTED_SEARCH_ENGINES.includes(cfg.SEARCH_FALLBACK_ENGINE)) {
     errors.push(

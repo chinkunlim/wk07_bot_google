@@ -28,6 +28,12 @@ function doPost(e) {
       console.log(`重複的 update ${update.update_id}，略過`);
       return ContentService.createTextOutput('ok');
     }
+    // 轉接站在線就交給它處理；離線時 GAS 自己回答
+    if (update.message && typeof update.message.text === 'string' && isRelayOnline()) {
+      enqueueRelayUpdate(update);
+      console.log(`📮 update ${update.update_id} 已排入轉接站佇列`);
+      return ContentService.createTextOutput('ok');
+    }
     handleUpdate(update);
   } catch (err) {
     // 全域錯誤處理：記錄堆疊，盡量回覆使用者
@@ -38,9 +44,16 @@ function doPost(e) {
   return ContentService.createTextOutput('ok');
 }
 
-/** 健康檢查：瀏覽器開啟 Web App 網址會看到這段文字 */
-function doGet() {
-  return ContentService.createTextOutput('Telegram AI Bot (Google Apps Script) is running.');
+/**
+ * GET 入口
+ * - ?action=poll&token=...：轉接站輪詢題目 (見 Relay.js)
+ * - 其他：健康檢查，瀏覽器開啟 Web App 網址會看到這段文字
+ */
+function doGet(e) {
+  const params = (e && e.parameter) || {};
+  if (params.action === 'poll') return relayPoll(params.token);
+  const relay = isRelayOnline() ? '轉接站在線' : '轉接站離線 (由 GAS 直接回答)';
+  return ContentService.createTextOutput(`Telegram AI Bot (Google Apps Script) is running. ${relay}`);
 }
 
 /**
