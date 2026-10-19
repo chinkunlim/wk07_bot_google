@@ -1,11 +1,32 @@
 # CHANGELOG
 
 本專案遵循 [Semantic Versioning](https://semver.org/) 與 [Keep a Changelog](https://keepachangelog.com/) 規範。
+每個版本附上對應的 commit；架構決策見 [docs/adr/](docs/adr/README.md)，已知問題見 [docs/known-issues.md](docs/known-issues.md)。
+> 歷史版本內容保留當時的寫法 (例如 2.1.0 提到的 `DECISIONS.md`、`KNOWN_ISSUES.md`、`WORKFLOW_GUIDE.md`，已於 2.4.1 搬移)。
+
 前身為 W6 的 Python + Ollama 本機版 ([chinkunlim/wk06_local_bot](https://github.com/chinkunlim/wk06_local_bot)，最後版本 1.0.3)，本 repo 從 GAS 移植版重新起算版本。
 
 ---
 
+## [2.4.1] - 2026-10-19
+
+### 變更
+- 📁 文件改為專業、可溯源的結構：
+  - `DECISIONS.md` → `docs/adr/`：一個決定一個檔案 (`NNN-slug.md`)，加入索引、撰寫規則與範本；ADR-007、008 恢復當時的原文，只更新狀態並指向更正它們的 ADR-012
+  - `KNOWN_ISSUES.md` → `docs/known-issues.md`：每個問題補上相關 ADR 與 commit 連結
+  - `WORKFLOW_GUIDE.md` → `CONTRIBUTING.md` (開源專案慣用名稱)
+  - 截圖 → `docs/images/`
+  - CHANGELOG 每個版本附上 commit
+- AGENTS.md 只更新上述檔案路徑，內容不變
+
+### 修復 (文件)
+- CHANGELOG：Gemini 備援模型、Workspace 網址、移除 `script.scriptapp` 原本誤列在 1.1.0，實際在 1.0.0 的首次 commit (`0a23708`) 就已包含
+
+---
+
 ## [2.4.0] - 2026-10-19
+
+commit：[`80697a1`](https://github.com/chinkunlim/wk07_bot_google/commit/80697a1)、[`35d4bfe`](https://github.com/chinkunlim/wk07_bot_google/commit/35d4bfe)
 
 ### 新增
 - 📋 試算表 Logs 分頁新增 `source` 欄，記錄每則提問的來源 (`webhook` = GAS 獨立模式、`relay` = 轉接站、`simulate`)；舊分頁自動補上標題
@@ -19,6 +40,8 @@
 
 ## [2.3.0] - 2026-10-19
 
+commit：[`32e69ca`](https://github.com/chinkunlim/wk07_bot_google/commit/32e69ca)
+
 ### 新增
 - 🔎 `npm run mode`：從 Telegram 的 webhook 狀態判斷目前是轉接站模式還是 GAS 獨立模式，並列出本機轉接站程序與 GAS 版本
 - 📝 GAS 日誌標示請求來源：`📨 來源：Telegram webhook (GAS 獨立模式)` / `🛰️ 來源：轉接站`，可在「執行作業」查證
@@ -30,6 +53,8 @@
 ---
 
 ## [2.2.0] - 2026-10-19
+
+commit：[`e21d7f9`](https://github.com/chinkunlim/wk07_bot_google/commit/e21d7f9)
 
 ### 修復
 - 🎯 **GAS 獨立模式穩定了 (ISSUE-001 根治)**：Telegram webhook 的回應從 `ContentService` 改為 `HtmlService` (`webhookResponse_()`)，GAS 直接回 HTTP 200，不再被 302 轉址；Telegram 不再判定投遞失敗、拉長重試間隔。不開轉接站、電腦關機時 bot 也能穩定回答
@@ -45,6 +70,8 @@
 
 ## [2.1.0] - 2026-10-19
 
+commit：[`e53467a`](https://github.com/chinkunlim/wk07_bot_google/commit/e53467a)
+
 ### 新增
 - 📚 開發文件：`CHANGELOG.md`、`DECISIONS.md` (架構決策)、`KNOWN_ISSUES.md` (已知問題)、`AGENTS.md` (給 AI Agent 與開發者的規範)、`WORKFLOW_GUIDE.md` (開發、部署、測試流程)
 - 🚀 npm script `redeploy` (`npm run redeploy -- <deploymentId>`，更新既有部署到新版本，網址不變)、`versions` (列出 GAS 版本)
@@ -59,6 +86,8 @@
 
 ## [2.0.1] - 2026-10-19
 
+commit：[`a9e4fa8`](https://github.com/chinkunlim/wk07_bot_google/commit/a9e4fa8)
+
 ### 變更
 - 專案從 `gas/` 子資料夾移到 repo 根目錄 (原本外層的 Python 版已移除，保留在 wk06_local_bot)；更新 `.env` 路徑說明
 
@@ -66,12 +95,14 @@
 
 ## [2.0.0] - 2026-10-19
 
+commit：[`6e863e3`](https://github.com/chinkunlim/wk07_bot_google/commit/6e863e3)
+
 ### 變更 (不相容)
-- 🔄 **轉接站改為向 Telegram 拉訊息、交給 GAS 回答** (見 ADR-007)
+- 🔄 **轉接站改為向 Telegram 拉訊息、交給 GAS 回答** (見 [ADR-007](docs/adr/007-relay-pulls-telegram.md))
   - 轉接站 `relay/relay.js` 用 `getUpdates` 長輪詢拿訊息，印出每一題，`POST ?action=ask` 交給 GAS
   - GAS 新增 ask 介面 (`src/Relay.js`)，以 `WEBHOOK_SECRET` 驗證，處理後直接回覆 Telegram，並把回覆與搜尋過程傳回轉接站印出
   - 轉接站只需要 `TELEGRAM_BOT_TOKEN`、`WEBHOOK_URL`、`WEBHOOK_SECRET`；Gemini 金鑰只放在 GAS
-  - 轉接站啟動時移除 webhook (保留未處理訊息並補答)，`Ctrl+C` 結束時設回 GAS (GAS 獨立模式，見 ADR-008)
+  - 轉接站啟動時移除 webhook (保留未處理訊息並補答)，`Ctrl+C` 結束時設回 GAS (GAS 獨立模式，見 [ADR-008](docs/adr/008-keep-gas-standalone.md))
 - 移除 1.1.0 的佇列輪詢 (`?action=poll`、`RELAY_MODE`) 與轉接站本機資料 (`.relay-data/`)
 
 ### 新增
@@ -87,19 +118,18 @@
 
 ## [1.1.0] - 2026-10-19
 
+commit：[`0f864a7`](https://github.com/chinkunlim/wk07_bot_google/commit/0f864a7)
+
 ### 新增
 - 🛰️ 電腦上的轉接站 (`npm run relay`)：每 2 秒向 GAS 輪詢題目、在本機搜尋並呼叫 Gemini (後於 2.0.0 改版)
 - 📄 單一檔案 `Code.gs` (`npm run build` 由 `src/*.js` 合併)，可直接貼進 GAS 編輯器；測試檢查與 `src/` 同步
-- 🔁 **Gemini 備援模型** (`GEMINI_FALLBACK_MODELS`)：主模型 429 / 503 時不等待直接改用下一個，用完的模型以 CacheService 暫停 (每日額度 1 小時、每分鐘限制依建議秒數)；頁尾標示 `(備援)`、日誌記錄實際模型
 - README 改寫為「怎麼裝、怎麼跑、我改了什麼」
-
-### 修復
-- `setWebhook` 接受學校 / 公司 (Workspace) 帳號的網址格式 (`/a/<網域>/macros/s/…/exec`)；`WEBHOOK_URL` 空白或填了 `/dev` 時給出明確說明
-- 移除未使用的 OAuth scope `script.scriptapp`
 
 ---
 
 ## [1.0.0] - 2026-10-19
+
+commit：[`0a23708`](https://github.com/chinkunlim/wk07_bot_google/commit/0a23708)
 
 ### 新增
 - 🎉 **從 Python + Ollama 移植到 Google Apps Script**，功能對齊 W6 版：
@@ -112,6 +142,9 @@
 - 🧪 Node 內建 test runner + `dev/gasShim.js` (模擬 GAS 全域物件)，Markdown 轉換與關鍵字擷取的輸出與 Python 版逐字比對相同
 - 🧰 clasp 只裝在專案資料夾，登入憑證存在 `.clasprc.json` (不寫到家目錄)
 - 編輯器診斷函式：`setupProperties`、`checkEnv`、`testGemini`、`testSearch`、`simulate`
+- 🔁 **Gemini 備援模型** (`GEMINI_FALLBACK_MODELS`)：主模型 429 / 503 時不等待直接改用下一個，用完的模型以 CacheService 暫停；頁尾標示 `(備援)`、日誌記錄實際模型 ([ADR-003](docs/adr/003-gemini-fallback-models.md))
+- `setWebhook` 接受學校 / 公司 (Workspace) 帳號的網址格式；`WEBHOOK_URL` 空白或填了 `/dev` 時給出明確說明
+- OAuth scope 只保留 `script.external_request`、`spreadsheets`
 
 ---
 

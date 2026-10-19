@@ -1,6 +1,7 @@
-# WORKFLOW_GUIDE.md - 開發、部署與測試流程
+# CONTRIBUTING.md - 開發、部署與測試流程
 
 第一次安裝見 `README.md`「怎麼裝」。本文件說明之後日常的開發、部署、測試與發布流程。
+文中的 `ISSUE-NNN` 見 [docs/known-issues.md](docs/known-issues.md)，`ADR-NNN` 見 [docs/adr/](docs/adr/README.md)。
 所有 npm 指令都在專案根目錄 (有 `package.json` 的資料夾) 執行。
 
 ---
@@ -104,7 +105,7 @@
   並確認沒有金鑰 (指令見 `AGENTS.md` §7)；`git status` 不應出現 `.env`、`.clasp*.json`
 - **發布**：
   1. 更新 `package.json` 的 `version` (語意化版本：不相容改動升主版號、新功能升次版號、修正升修訂號)
-  2. `CHANGELOG.md` 新增版本段落；架構改變補 `DECISIONS.md`；新問題補 `KNOWN_ISSUES.md`
+  2. `CHANGELOG.md` 新增版本段落並附 commit；重要且不易回頭的決定新增 ADR (`docs/adr/`，從 `template.md` 複製，已採用的 ADR 不改內容)；新問題補 `docs/known-issues.md`
   3. commit、push；需要時打 tag：`git tag v2.1.0 && git push --tags`
 
 ## 7. 首次部署到新的 Google 帳號

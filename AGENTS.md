@@ -1,7 +1,7 @@
 # AGENTS.md - Telegram AI Bot (GAS + 轉接站) 開發指南
 
 本文件為 AI Agents 與開發者提供本專案的架構、程式碼慣例與維護原則。
-使用說明見 `README.md`；決策理由見 `DECISIONS.md`；已知問題見 `KNOWN_ISSUES.md`；開發與部署流程見 `WORKFLOW_GUIDE.md`。
+使用說明見 `README.md`；決策理由見 `docs/adr/`；已知問題見 `docs/known-issues.md`；開發與部署流程見 `CONTRIBUTING.md`。
 
 ---
 
@@ -126,5 +126,5 @@ git grep --cached -nE "AIza[0-9A-Za-z_-]{20,}|[0-9]{8,10}:AA[0-9A-Za-z_-]{30,}|g
 
 - 分支：`main`；較大的改動用 `feature/*`、`fix/*`、`docs/*`
 - 提交：Conventional Commits (`feat:` `fix:` `docs:` `refactor:` `chore:` `test:`)
-- 發布：更新 `package.json` 版本與 `CHANGELOG.md`；架構性改變補 `DECISIONS.md`；新問題補 `KNOWN_ISSUES.md`
+- 發布：更新 `package.json` 版本與 `CHANGELOG.md`；架構性改變補 `docs/adr/`；新問題補 `docs/known-issues.md`
 - 不可進版控：`.env`、`.clasp.json`、`.clasprc.json`、`.relay-data/`、`node_modules/`

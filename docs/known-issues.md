@@ -1,6 +1,7 @@
-# KNOWN_ISSUES.md - 已知問題與規避方式
+# 已知問題與規避方式
 
 狀態：🔴 未解決、🟡 有規避方式、🟢 已解決 (保留紀錄)。
+每個問題的「相關」列出對應的 [架構決策 (ADR)](adr/README.md) 與 commit，可追溯「問題 → 決策 → 修正 → 版本」。
 
 | ID | 問題 | 狀態 |
 |---|---|---|
@@ -29,7 +30,8 @@
 - **狀態**：🟢 已解決 (2.2.0)。
 - **現象**：沒開轉接站時 (webhook 指向 GAS)，前幾則訊息正常，之後回覆越來越慢甚至不回；`getWebhookInfo` 顯示 `Wrong response from the webhook: 302 Found`，`pending_update_count` 一直累積。
 - **原因**：`doPost` 用 `ContentService.createTextOutput()` 回應，GAS 會把它 302 轉址到 `script.googleusercontent.com`；Telegram 不跟隨轉址、視為投遞失敗，重送並逐次拉長重試間隔，新訊息排在後面。(2.0.0 時誤判為「GAS 一律回 302、無法改變」。)
-- **解決**：Telegram 路徑改回傳 `HtmlService.createHtmlOutput()` (`webhookResponse_()`)，直接回 200。見 ADR-012。
+- **解決**：Telegram 路徑改回傳 `HtmlService.createHtmlOutput()` (`webhookResponse_()`)，直接回 200。
+- **相關**：[ADR-012](adr/012-webhook-htmlservice.md)、commit [`e21d7f9`](https://github.com/chinkunlim/wk07_bot_google/commit/e21d7f9)、CHANGELOG 2.2.0；當時的錯誤判斷見 [ADR-007](adr/007-relay-pulls-telegram.md)
 - **防止再發生**：`test/relay.test.js` 檢查所有 Telegram 路徑都回 HtmlService；若 `getWebhookInfo` 再出現 302，先檢查 `doPost` 的回傳值。
 
 ## ISSUE-002 push 之後網址跑的還是舊程式
@@ -60,6 +62,7 @@
 - **原因**：webhook 只在轉接站正常結束時設回 GAS；異常結束時 webhook 仍是移除狀態，沒有人去拿訊息。
 - **規避**：重新開轉接站 (未處理的訊息會補答，Telegram 最多保留 24 小時)；或在 GAS 編輯器 `src/Main.gs` 執行 `setWebhook` 切到 GAS 獨立模式。
 - **規劃**：GAS 定時觸發器檢查轉接站最近是否活動，太久沒有就自動 setWebhook。
+- **相關**：[ADR-008](adr/008-keep-gas-standalone.md)、commit [`6e863e3`](https://github.com/chinkunlim/wk07_bot_google/commit/6e863e3)
 
 ## ISSUE-006 瀏覽器開網址顯示「無法開啟這個檔案」
 
@@ -89,12 +92,14 @@
 - **現象**：回覆「Gemini API 使用量已達上限」。
 - **原因**：免費額度有每分鐘 / 每日限制；router 模式每題至少呼叫 2 次。
 - **規避**：`GEMINI_FALLBACK_MODELS` 多加幾個模型 (額度按模型分開)；或改 `SEARCH_DECISION=tools`；`/models` 查可用模型。處理失敗時本次不計入使用者額度。
+- **相關**：[ADR-003](adr/003-gemini-fallback-models.md)、[ADR-004](adr/004-router-search-decision.md)
 
 ## ISSUE-011 搜尋引擎改版或封鎖
 
 - **現象**：日誌出現 `🚫 [DuckDuckGo] 被機器人驗證擋下`、`⚠️ [multi] … 換下一個引擎`，或各引擎都沒有結果。
 - **原因**：搜尋結果是解析 HTML 取得，網站改版會失效；部分引擎會擋 Google 機房或特定 IP (本機測試時 Mojeek 回 403)。
 - **規避**：GAS 編輯器執行 `testSearch` 看各引擎狀況；改 `SEARCH_ENGINE` / `SEARCH_FALLBACK_ENGINE` (例如 `google_news`)；更新 `src/Search*.js` 的解析器並補 `test/search.test.js` 的 fixture。
+- **相關**：[ADR-002](adr/002-self-built-search.md)、[ADR-011](adr/011-multi-search-engine.md)
 
 ## ISSUE-012 `npm audit` 顯示 3 個 high
 
@@ -111,19 +116,23 @@
 - **現象**：多人同時提問時，後面的訊息要等前一則處理完 (每則約 2–15 秒)。
 - **原因**：轉接站同步處理以保持視窗輸出清楚，GAS 每次請求也有 6 分鐘上限。
 - **規劃**：改為平行處理多則訊息。
+- **相關**：[ADR-007](adr/007-relay-pulls-telegram.md)
 
 ## ISSUE-015 在外層資料夾執行 npm 找不到 `package.json`
 
 - **狀態**：🟢 已解決 (2.0.1 把專案移到 repo 根目錄，不再有 `gas/` 子資料夾)。
 - **說明**：所有 npm 指令都要在有 `package.json` 的資料夾執行。
+- **相關**：commit [`a9e4fa8`](https://github.com/chinkunlim/wk07_bot_google/commit/a9e4fa8)、CHANGELOG 2.0.1
 
 ## ISSUE-016 轉接站看不到 GAS 的搜尋過程
 
 - **狀態**：🟢 已解決 (2.0.0)。
 - **原因**：原本想在 GAS 端暫時覆寫 `console` 攔截日誌，實測無效。
 - **解決**：重點步驟改呼叫 `traceLog` / `traceWarn`，處理轉接站請求時一併回傳。
+- **相關**：commit [`6e863e3`](https://github.com/chinkunlim/wk07_bot_google/commit/6e863e3)、CHANGELOG 2.0.0
 
 ## ISSUE-017 `setWebhook` 拒絕學校帳號網址 / `/dev` 網址
 
-- **狀態**：🟢 已解決 (1.1.0)。
+- **狀態**：🟢 已解決 (1.0.0，在首次 commit 前修正)。
 - **說明**：學校帳號的網址格式為 `https://script.google.com/a/<網域>/macros/s/…/exec`，現已接受；`/dev` 是編輯者專用的測試網址，Telegram 與轉接站都無法存取，`setWebhook` 會提示改用 `/exec`。
+- **相關**：commit [`0a23708`](https://github.com/chinkunlim/wk07_bot_google/commit/0a23708)

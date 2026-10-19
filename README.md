@@ -11,7 +11,16 @@ Telegram 聊天機器人：**電腦上的轉接站**向 Telegram 拿訊息、印
 | `src/` | `Code.gs` 的原始碼，依功能分檔 (clasp 推送的是這裡) |
 | `test/` | 自動測試 (`npm test`，89 項) |
 
-**文件**：[CHANGELOG](CHANGELOG.md) 版本紀錄・[DECISIONS](DECISIONS.md) 架構決策・[KNOWN_ISSUES](KNOWN_ISSUES.md) 已知問題・[WORKFLOW_GUIDE](WORKFLOW_GUIDE.md) 開發與部署流程・[AGENTS](AGENTS.md) 程式規範
+**文件**
+
+| 文件 | 內容 |
+|---|---|
+| [CHANGELOG.md](CHANGELOG.md) | 版本紀錄 (每版附 commit) |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | 開發、部署、測試與發布流程 |
+| [AGENTS.md](AGENTS.md) | 給 AI Agent 與開發者的程式規範 |
+| [docs/adr/](docs/adr/README.md) | 架構決策記錄 (ADR)，一個決定一個檔案 |
+| [docs/known-issues.md](docs/known-issues.md) | 已知問題、原因與規避方式 |
+| `docs/images/` | README 用的截圖 |
 
 ## 🧭 架構
 
@@ -134,7 +143,7 @@ npm run relay
 
 - **搜尋判斷**：沿用 W6 的 router 模式，先讓模型輸出 JSON `{need_search, query}`，寫程式、翻譯、閒聊不搜尋；也可切換成原生 Function Calling (`SEARCH_DECISION=tools`)
 - **Gemini 3 的工具呼叫**：Gemini 3 的工具呼叫帶有模型產生的簽章 (thoughtSignature)，不能像 W6 那樣自己假造一筆工具呼叫，所以 router 模式改成把搜尋結果附在使用者問題後面
-- **webhook 回應改用 HtmlService**：一開始 `doPost` 用 `ContentService` 回應，GAS 會把它 302 轉址，Telegram 視為失敗、越重試越慢，最後不再送訊息。對照 W5 / W6 的 GAS bot (用 `HtmlService` 回應，直接回 200) 後找到原因，改用 `HtmlService` 就穩定了 (見 DECISIONS ADR-012)
+- **webhook 回應改用 HtmlService**：一開始 `doPost` 用 `ContentService` 回應，GAS 會把它 302 轉址，Telegram 視為失敗、越重試越慢，最後不再送訊息。對照 W5 / W6 的 GAS bot (用 `HtmlService` 回應，直接回 200) 後找到原因，改用 `HtmlService` 就穩定了 (見 [ADR-012](docs/adr/012-webhook-htmlservice.md))
 - **防重複回答**：同一則訊息重送時以 `update_id` 去重
 - **安全**：webhook 與轉接站輪詢都要帶 `WEBHOOK_SECRET`，否則拒絕；白名單外的人只會看到自己的 User ID
 - **時區**：配額與「今天日期」固定用台北時間
@@ -145,22 +154,22 @@ npm run relay
 
 **Telegram：bot 回答並附搜尋來源**
 
-![Telegram 畫面](docs/phone.png)
+![Telegram 畫面](docs/images/phone.png)
 
 **電腦：轉接站印出這一題、GAS 的搜尋過程與回覆**
 
-![轉接站畫面](docs/relay.png)
+![轉接站畫面](docs/images/relay.png)
 
 ### 沒開轉接站 (GAS 獨立模式)
 
 轉接站關閉時 Telegram 直接把訊息送到 GAS，一樣能搜尋、附來源回答：
 
-![GAS 獨立模式](docs/standalone.png)
+![GAS 獨立模式](docs/images/standalone.png)
 
 - **查 東華大學陳文盛老師 115-1 學期開什麼課**：讀取課程網頁內文，完整列出 8 門課
 - **查 2026年的諾貝爾獎得主名單**：整理六大獎項得主與得獎原因
 
-> 第一題 12:27 送出、12:34 才回答：那時 webhook 回應還是 `ContentService`，被 GAS 302 轉址，Telegram 一直重試 (KNOWN_ISSUES ISSUE-001)；12:33 部署修正後立刻補答。第二題 (12:35) 是修正後送出，正常回答。
+> 第一題 12:27 送出、12:34 才回答：那時 webhook 回應還是 `ContentService`，被 GAS 302 轉址，Telegram 一直重試 ([ISSUE-001](docs/known-issues.md#issue-001-gas-獨立模式越來越慢最後不回))；12:33 部署修正後立刻補答。第二題 (12:35) 是修正後送出，正常回答。
 
 #### 怎麼證明當時沒開轉接站
 
@@ -231,7 +240,7 @@ GAS 編輯器「執行作業」裡每次 `doPost` 的第一行也會寫 `📨 �
 | 轉接站顯示「收到網頁而不是 JSON」 | 網頁應用程式存取權不是「所有人」，或部署的不是新版本 (開 `/exec` 網址看版本字樣是否為最新，目前 `v2.4`)。學校帳號若只能選「網域內使用者」，請改用個人 Gmail |
 | 轉接站顯示「token 不符」 | `.env` 的 `WEBHOOK_SECRET` 要和指令碼屬性完全相同 |
 | 轉接站顯示 `Conflict` | 有另一個轉接站或 W6 Python 版在跑 (同一個 Token 只能有一個程式拿訊息) |
-| bot 不回 | 轉接站有沒有在跑；沒有時 webhook 是否指向 GAS (`getWebhookInfo`，轉接站異常結束時不會自動設回，見 KNOWN_ISSUES ISSUE-005) |
+| bot 不回 | 轉接站有沒有在跑；沒有時 webhook 是否指向 GAS (`getWebhookInfo`，轉接站異常結束時不會自動設回，見 [ISSUE-005](docs/known-issues.md#issue-005-轉接站異常結束時-webhook-沒有設回-gas)) |
 | `Gemini API 使用量已達上限` | 主模型與備援模型的免費額度都用完了，可在 `GEMINI_FALLBACK_MODELS` 多加模型 |
 | 想看 GAS 自己能不能回答 | GAS 編輯器執行 `simulate` (不經過 Telegram)，看執行紀錄 |
 | 偶爾一行 HTTP 404 | 剛重新部署時 Google 還在同步，稍等即可 |
