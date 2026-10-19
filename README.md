@@ -11,6 +11,8 @@ Telegram 聊天機器人：**電腦上的轉接站**向 Telegram 拿訊息、印
 | `src/` | `Code.gs` 的原始碼，依功能分檔 (clasp 推送的是這裡) |
 | `test/` | 自動測試 (`npm test`，85 項) |
 
+**文件**：[CHANGELOG](CHANGELOG.md) 版本紀錄・[DECISIONS](DECISIONS.md) 架構決策・[KNOWN_ISSUES](KNOWN_ISSUES.md) 已知問題・[WORKFLOW_GUIDE](WORKFLOW_GUIDE.md) 開發與部署流程・[AGENTS](AGENTS.md) 程式規範
+
 ## 🧭 架構
 
 ```
@@ -108,6 +110,7 @@ npm run relay
 | `npm test` | 自動測試 (不連網、不需金鑰) |
 | `npm run build` | 修改 `src/` 後重新產生 `Code.gs` |
 | `npm run push` | 用 clasp 把 `src/` 推到 GAS (之後要「部署 → 管理部署作業 → 新版本」才會生效) |
+| `npm run redeploy -- <deploymentId>` | 把既有部署更新到新版本 (網址不變；ID 用 `npm run deployments` 查) |
 
 ## ✏️ 我改了什麼
 

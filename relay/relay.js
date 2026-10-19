@@ -164,6 +164,8 @@ async function main() {
         offset, timeout: LONG_POLL_SECONDS, allowed_updates: ['message'],
       }, LONG_POLL_SECONDS + 15);
     } catch (e) {
+      // 視窗按 Ctrl+C 時 curl 會先被中斷：先讓 SIGINT 處理程序執行，再判斷是否要結束
+      await sleep(0.05);
       if (stopping) break;
       console.error(`[${time()}] ⚠️  向 Telegram 拿訊息失敗：${e.message}`);
       await sleep(ERROR_BACKOFF_SECONDS);

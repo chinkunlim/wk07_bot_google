@@ -1,6 +1,6 @@
 {
   "name": "telegram-ai-bot-gas",
-  "version": "1.0.0",
+  "version": "2.1.0",
   "private": true,
   "description": "Telegram AI Bot - Google Apps Script 版 (Gemini API + 網路搜尋 + 電腦上的轉接站)",
   "scripts": {
@@ -15,7 +15,9 @@
     "push": "clasp -A .clasprc.json push --force",
     "open": "clasp -A .clasprc.json open-script",
     "deploy": "clasp -A .clasprc.json create-deployment --description \"Telegram webhook\"",
-    "deployments": "clasp -A .clasprc.json list-deployments"
+    "redeploy": "clasp -A .clasprc.json update-deployment",
+    "deployments": "clasp -A .clasprc.json list-deployments",
+    "versions": "clasp -A .clasprc.json list-versions"
   },
   "devDependencies": {
     "@google/clasp": "^3.4.1"
