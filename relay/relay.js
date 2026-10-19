@@ -12,7 +12,7 @@
  * 啟動時移除 webhook (getUpdates 與 webhook 不能並存)；Ctrl+C 結束時把 webhook 設回 GAS，
  * 電腦關機期間改由 GAS 獨立回答 (RELAY_RESTORE_WEBHOOK=false 可停用)。
  *
- * 設定：gas/.env，需要 TELEGRAM_BOT_TOKEN、WEBHOOK_URL (/exec 網址)、WEBHOOK_SECRET (與 GAS 指令碼屬性相同)
+ * 設定：專案資料夾的 .env，需要 TELEGRAM_BOT_TOKEN、WEBHOOK_URL (/exec 網址)、WEBHOOK_SECRET (與 GAS 指令碼屬性相同)
  * 只用 Node 內建模組與 curl，不需安裝套件
  */
 const fs = require('node:fs');

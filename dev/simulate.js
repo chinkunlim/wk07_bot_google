@@ -4,7 +4,7 @@
  * 在終端機打字提問，走與 GAS 相同的 processQuery 流程。
  * - Gemini、搜尋、網頁讀取真的連網 (以 curl 代替 UrlFetchApp)
  * - 對話歷史 / 配額存在記憶體，結束即清除
- * 設定來源：gas/.env (KEY=VALUE，至少需要 GEMINI_API_KEY)，或同名環境變數
+ * 設定來源：專案資料夾的 .env (KEY=VALUE，至少需要 GEMINI_API_KEY)，或同名環境變數
  *
  * 注意：在本機連網的 IP 與 Google 機房不同，搜尋引擎是否被擋要以 GAS 的 testSearch() 為準
  */
