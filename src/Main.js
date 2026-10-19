@@ -3,6 +3,9 @@
  * 部署為 Web App 後，Telegram 每則訊息會 POST 到 doPost
  */
 
+// 這次請求的來源 (webhook / relay / simulate)，寫進 Logs 分頁的 source 欄
+let REQUEST_SOURCE_ = '';
+
 const BOT_COMMANDS = [
   { command: 'start', description: '開始使用' },
   { command: 'search', description: '即時搜尋並總結' },
@@ -32,7 +35,8 @@ function doPost(e) {
       return webhookResponse_('forbidden');
     }
     update = JSON.parse(e.postData.contents);
-    // 執行作業的紀錄可看出這則是從哪裡來的 (證明當時是 GAS 獨立模式)
+    // 執行作業的紀錄與 Logs 分頁都記下這則是從哪裡來的 (證明當時是 GAS 獨立模式)
+    REQUEST_SOURCE_ = 'webhook';
     console.log(`📨 來源：Telegram webhook (GAS 獨立模式)，update ${update.update_id}`);
     if (isDuplicateUpdate(update.update_id)) {
       console.log(`重複的 update ${update.update_id}，略過`);
@@ -62,6 +66,7 @@ function relayDoPost_(e) {
   let result;
   try {
     const update = JSON.parse((e.postData && e.postData.contents) || '{}');
+    REQUEST_SOURCE_ = 'relay';
     console.log(`🛰️ 來源：轉接站，update ${update.update_id}`);
     result = relayAsk(e.parameter.token, update);
   } catch (err) {
@@ -71,9 +76,21 @@ function relayDoPost_(e) {
   return ContentService.createTextOutput(JSON.stringify(result)).setMimeType(ContentService.MimeType.JSON);
 }
 
-/** 健康檢查：瀏覽器開啟 Web App 網址會看到這段文字 (版本字樣用來確認部署的是新版) */
-function doGet() {
-  return ContentService.createTextOutput('Telegram AI Bot (Google Apps Script) is running. v2.3');
+/**
+ * GET 入口
+ * - ?action=recent&token=WEBHOOK_SECRET&n=5：最近 n 則提問與來源 (npm run mode 用)，回傳 JSON
+ * - 其他：健康檢查，瀏覽器開啟 Web App 網址會看到這段文字 (版本字樣用來確認部署的是新版)
+ */
+function doGet(e) {
+  const params = (e && e.parameter) || {};
+  if (params.action === 'recent') {
+    const secret = getConfig().WEBHOOK_SECRET;
+    const result = !secret || params.token !== secret
+      ? { ok: false, error: 'token 不符：.env 的 WEBHOOK_SECRET 要與 GAS 指令碼屬性相同' }
+      : { ok: true, items: getRecentInteractions(Math.min(Math.max(parseInt(params.n, 10) || 5, 1), 20)) };
+    return ContentService.createTextOutput(JSON.stringify(result)).setMimeType(ContentService.MimeType.JSON);
+  }
+  return ContentService.createTextOutput('Telegram AI Bot (Google Apps Script) is running. v2.4');
 }
 
 /**

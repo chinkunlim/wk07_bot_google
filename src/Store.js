@@ -10,7 +10,7 @@ const SHEET_LOGS = 'Logs';
 const SHEET_HEADERS = {
   [SHEET_HISTORY]: ['user_id', 'history_json', 'updated_at'],
   [SHEET_QUOTA]: ['date', 'user_id', 'count'],
-  [SHEET_LOGS]: ['timestamp', 'user_id', 'user_name', 'prompt', 'response', 'tokens', 'daily_count', 'model'],
+  [SHEET_LOGS]: ['timestamp', 'user_id', 'user_name', 'prompt', 'response', 'tokens', 'daily_count', 'model', 'source'],
 };
 // 這些欄位存成純文字，避免試算表把日期、長數字自動轉型
 const SHEET_TEXT_COLUMNS = {
@@ -55,6 +55,10 @@ function getSheet_(name) {
     for (const col of SHEET_TEXT_COLUMNS[name] || []) {
       sheet.getRange(1, col, sheet.getMaxRows(), 1).setNumberFormat('@');
     }
+  } else if (sheet.getLastColumn() < SHEET_HEADERS[name].length) {
+    // 舊版建立的分頁少了新欄位 (例如 Logs 的 source)，補上標題列
+    const headers = SHEET_HEADERS[name];
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
   }
   return sheet;
 }
@@ -281,10 +285,32 @@ function logInteraction(record) {
       JSON.stringify(record.tokens || {}),
       record.dailyCount || 0,
       record.model || '',
+      record.source || '',
     ]);
   } catch (e) {
     console.error(`寫入互動日誌失敗: ${e}`);
   }
+}
+
+/** 請求來源代碼 → 顯示文字 */
+const REQUEST_SOURCE_LABELS = {
+  webhook: '📨 Telegram webhook (GAS 獨立模式)',
+  relay: '🛰️ 轉接站',
+  simulate: '🧪 編輯器 simulate',
+};
+
+/** 最近 n 則提問 (不含回覆內容)：[{time, userName, prompt, model, source, sourceLabel}] */
+function getRecentInteractions(n) {
+  const rows = getDataRows_(getSheet_(SHEET_LOGS)).slice(-n);
+  return rows.reverse().map((r) => ({
+    // 試算表會把時間欄自動轉成日期型別，要連時分秒一起格式化
+    time: r[0] instanceof Date ? Utilities.formatDate(r[0], getTimeZone_(), 'yyyy-MM-dd HH:mm:ss') : String(r[0]).replace('T', ' '),
+    userName: String(r[2] || ''),
+    prompt: String(r[3] || '').slice(0, 60),
+    model: String(r[7] || ''),
+    source: String(r[8] || ''),
+    sourceLabel: REQUEST_SOURCE_LABELS[r[8]] || '(未記錄來源)',
+  }));
 }
 
 // ===== Webhook 去重 =====

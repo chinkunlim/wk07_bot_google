@@ -35,7 +35,7 @@
 | `src/Handler.js` | 指令路由、查詢處理、搜尋判斷、工具循環、回覆組裝 | `handleUpdate()`, `processQuery()`, `runQuery()`, `routerSearch()`, `toolLoop()`, `finalizeResponse()` |
 | `src/Telegram.js` | Telegram Bot API (失敗不拋例外)、對話情境 | `telegramApi()`, `tgSendMessage()`, `tgEditMessageText()`, `createTelegramContext()` |
 | `src/Gemini.js` | 提示詞、Gemini REST、Function Calling、備援模型 | `geminiGenerate()`, `decideSearch()`, `listGeminiModels()`, `SYSTEM_PROMPT`, `ROUTER_PROMPT`, `SEARCH_TOOL` |
-| `src/Store.js` | 試算表 (歷史 / 配額 / 日誌)、LockService、update 去重 | `getConversationHistory()`, `checkAndConsumeQuota()`, `refundQuota()`, `logInteraction()`, `isDuplicateUpdate()` |
+| `src/Store.js` | 試算表 (歷史 / 配額 / 日誌含請求來源)、LockService、update 去重 | `getConversationHistory()`, `checkAndConsumeQuota()`, `refundQuota()`, `logInteraction()`, `getRecentInteractions()`, `isDuplicateUpdate()` |
 | `src/Config.js` | 指令碼屬性、預設值、驗證 | `getConfig()`, `buildConfig()`, `validateConfig()`, `setupProperties()` |
 | `src/Search.js` | 搜尋引擎註冊表、主引擎 → 備援 | `search()`, `formatResults()`, `getSearchEngines()` |
 | `src/SearchDuckDuckGo.js` / `SearchGoogleNews.js` / `SearchMulti.js` | 各引擎抓取與 HTML / RSS 解析 | `searchDuckDuckGo()`, `searchGoogleNews()`, `searchMulti()`, `parse*()` |
@@ -110,7 +110,7 @@
 ## 7. 驗證
 
 ```bash
-npm test          # 87 項：格式、搜尋解析、Gemini、儲存、端對端 (假網路)、轉接站、Code.gs 同步
+npm test          # 89 項：格式、搜尋解析、Gemini、儲存、端對端 (假網路)、轉接站、Code.gs 同步
 npm run build     # 修改 src/ 後重新產生 Code.gs (否則 npm test 失敗)
 npm run simulate  # 本機真的連 Gemini 與搜尋 (需 .env 的 GEMINI_API_KEY)
 ```

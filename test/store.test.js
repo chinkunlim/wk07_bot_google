@@ -98,7 +98,7 @@ test('logInteraction 寫入 Logs 分頁並截斷長回覆', () => {
   g.get('logInteraction')({ userId: 9, userName: '小明', prompt: '問', response: 'x'.repeat(600), tokens: { totalTokenCount: 3 }, dailyCount: 1 });
   const ss = Object.values(g.spreadsheets)[0];
   const rows = ss.getSheetByName('Logs').rows;
-  assert.deepEqual(rows[0], ['timestamp', 'user_id', 'user_name', 'prompt', 'response', 'tokens', 'daily_count', 'model']);
+  assert.deepEqual(rows[0], ['timestamp', 'user_id', 'user_name', 'prompt', 'response', 'tokens', 'daily_count', 'model', 'source']);
   assert.equal(rows[1][1], '9');
   assert.equal(rows[1][4].length, 503);
   assert.equal(rows[1][5], '{"totalTokenCount":3}');

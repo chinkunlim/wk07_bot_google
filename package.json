@@ -1,6 +1,6 @@
 {
   "name": "telegram-ai-bot-gas",
-  "version": "2.3.0",
+  "version": "2.4.0",
   "private": true,
   "description": "Telegram AI Bot - Google Apps Script 版 (Gemini API + 網路搜尋 + 電腦上的轉接站)",
   "scripts": {

@@ -84,7 +84,7 @@ test('Telegram webhook (GAS 獨立模式) 仍可直接處理', () => {
   const t = setupGas();
   t.g.get('doPost')({ parameter: { secret: SECRET }, postData: { contents: JSON.stringify(makeUpdate(5, '/help')) } });
   assert.equal(t.telegram.filter((c) => c.method === 'sendMessage').length, 1);
-  assert.match(t.g.get('doGet')().getContent(), /v2\.3/);
+  assert.match(t.g.get('doGet')().getContent(), /v2\.4/);
 });
 
 test('日誌標示請求來源 (webhook / 轉接站)', () => {
@@ -94,6 +94,27 @@ test('日誌標示請求來源 (webhook / 轉接站)', () => {
   const texts = t.g.logs.map((l) => l.text);
   assert.ok(texts.includes('📨 來源：Telegram webhook (GAS 獨立模式)，update 30'));
   assert.ok(texts.includes('🛰️ 來源：轉接站，update 31'));
+});
+
+test('Logs 記錄請求來源；doGet ?action=recent 以 token 取得最近提問', () => {
+  const t = setupGas();
+  t.geminiReplies.push('{"need_search": false, "query": ""}', '答一', '{"need_search": false, "query": ""}', '答二');
+  t.g.get('doPost')({ parameter: { secret: SECRET }, postData: { contents: JSON.stringify(makeUpdate(40, '第一題')) } });
+  t.ask(SECRET, makeUpdate(41, '第二題'));
+  const recent = (token) => JSON.parse(t.g.get('doGet')({ parameter: { action: 'recent', token, n: '5' } }).getContent());
+  const res = recent(SECRET);
+  assert.equal(res.ok, true);
+  assert.deepEqual(res.items.map((i) => [i.prompt, i.source]), [['第二題', 'relay'], ['第一題', 'webhook']]);
+  assert.match(res.items[1].sourceLabel, /GAS 獨立模式/);
+  assert.equal(recent('wrong').ok, false);
+});
+
+test('舊版 Logs 分頁 (沒有 source 欄) 會補上標題列', () => {
+  const t = setupGas();
+  const ss = t.g.get('getSpreadsheet_')();
+  ss.insertSheet('Logs').appendRow(['timestamp', 'user_id', 'user_name', 'prompt', 'response', 'tokens', 'daily_count', 'model']);
+  t.g.get('logInteraction')({ userId: 1, prompt: 'x', source: 'webhook' });
+  assert.equal(ss.getSheetByName('Logs').rows[0][8], 'source');
 });
 
 test('Telegram webhook 一律回 HtmlService (HTTP 200)，不用會被 302 轉址的 ContentService', () => {

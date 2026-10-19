@@ -6,9 +6,9 @@
  * - webhook 指向 GAS → GAS 獨立模式。此時 Telegram 不允許任何程式用 getUpdates 拿訊息
  *   (會回 409 Conflict)，所以轉接站不可能在處理訊息
  * - webhook 未設定 → 轉接站模式 (轉接站啟動時會移除 webhook)
- * 另外列出本機有沒有轉接站程序，以及 GAS 部署的版本字樣
+ * 另外列出本機有沒有轉接站程序、GAS 部署的版本字樣，以及最近 N 則提問的來源 (npm run mode -- 10)
  *
- * 設定：專案資料夾的 .env (TELEGRAM_BOT_TOKEN、WEBHOOK_URL)；不會印出 Token 與 secret
+ * 設定：專案資料夾的 .env (TELEGRAM_BOT_TOKEN、WEBHOOK_URL、WEBHOOK_SECRET)；不會印出 Token 與 secret
  */
 const { execFileSync } = require('node:child_process');
 const path = require('node:path');
@@ -58,6 +58,27 @@ if (base) {
     console.log(`GAS 版本：(無法連線：${e.message})`);
   }
 }
+// 最近的提問與來源 (GAS 試算表 Logs 分頁)
+if (base && env.WEBHOOK_SECRET) {
+  const n = Math.min(Math.max(parseInt(process.argv[2], 10) || 5, 1), 20);
+  try {
+    const url = `${base}?action=recent&n=${n}&token=${encodeURIComponent(env.WEBHOOK_SECRET)}`;
+    const data = JSON.parse(curlFetch(url, { muteHttpExceptions: true }).getContentText());
+    console.log('');
+    if (!data.ok) {
+      console.log(`最近提問：(無法取得：${data.error})`);
+    } else {
+      console.log(`最近 ${data.items.length} 則提問 (GAS 試算表 Logs 分頁，新的在上)：`);
+      for (const it of data.items) {
+        const prompt = it.prompt.length > 28 ? `${it.prompt.slice(0, 28)}…` : it.prompt;
+        console.log(`  ${it.time.replace('T', ' ')}  ${it.sourceLabel}  ${it.userName}：${prompt}`);
+      }
+    }
+  } catch (e) {
+    console.log(`最近提問：(無法取得，GAS 可能還不是 v2.4 以上：${e.message})`);
+  }
+}
+
 console.log('');
 if (pointsToGas) {
   console.log('➡️  目前是【GAS 獨立模式】：Telegram 把訊息直接送到 GAS，轉接站沒有在處理訊息');

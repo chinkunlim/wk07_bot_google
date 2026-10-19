@@ -50,6 +50,7 @@ function simulate() {
   const raw = PropertiesService.getScriptProperties().getProperty('SIM_QUERY');
   const queries = raw ? raw.split('||').map((q) => q.trim()).filter(Boolean) : SIM_DEFAULT_QUERIES;
 
+  REQUEST_SOURCE_ = 'simulate';
   // 每次模擬都是新的對話，避免上次的內容混進回答
   clearConversationHistory(SIM_USER_ID);
   queries.forEach((text, i) => {

@@ -421,5 +421,6 @@ function finalizeResponse(ctx, userQuery, assistantReply, toolResults, quota, us
     tokens: usage,
     dailyCount: quota.current,
     model: model,
+    source: REQUEST_SOURCE_,
   });
 }

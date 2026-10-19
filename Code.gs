@@ -235,6 +235,7 @@ function simulate() {
   const raw = PropertiesService.getScriptProperties().getProperty('SIM_QUERY');
   const queries = raw ? raw.split('||').map((q) => q.trim()).filter(Boolean) : SIM_DEFAULT_QUERIES;
 
+  REQUEST_SOURCE_ = 'simulate';
   // 每次模擬都是新的對話，避免上次的內容混進回答
   clearConversationHistory(SIM_USER_ID);
   queries.forEach((text, i) => {
@@ -1266,6 +1267,7 @@ function finalizeResponse(ctx, userQuery, assistantReply, toolResults, quota, us
     tokens: usage,
     dailyCount: quota.current,
     model: model,
+    source: REQUEST_SOURCE_,
   });
 }
 
@@ -1450,6 +1452,9 @@ function queryKeywords(query) {
  * 部署為 Web App 後，Telegram 每則訊息會 POST 到 doPost
  */
 
+// 這次請求的來源 (webhook / relay / simulate)，寫進 Logs 分頁的 source 欄
+let REQUEST_SOURCE_ = '';
+
 const BOT_COMMANDS = [
   { command: 'start', description: '開始使用' },
   { command: 'search', description: '即時搜尋並總結' },
@@ -1479,7 +1484,8 @@ function doPost(e) {
       return webhookResponse_('forbidden');
     }
     update = JSON.parse(e.postData.contents);
-    // 執行作業的紀錄可看出這則是從哪裡來的 (證明當時是 GAS 獨立模式)
+    // 執行作業的紀錄與 Logs 分頁都記下這則是從哪裡來的 (證明當時是 GAS 獨立模式)
+    REQUEST_SOURCE_ = 'webhook';
     console.log(`📨 來源：Telegram webhook (GAS 獨立模式)，update ${update.update_id}`);
     if (isDuplicateUpdate(update.update_id)) {
       console.log(`重複的 update ${update.update_id}，略過`);
@@ -1509,6 +1515,7 @@ function relayDoPost_(e) {
   let result;
   try {
     const update = JSON.parse((e.postData && e.postData.contents) || '{}');
+    REQUEST_SOURCE_ = 'relay';
     console.log(`🛰️ 來源：轉接站，update ${update.update_id}`);
     result = relayAsk(e.parameter.token, update);
   } catch (err) {
@@ -1518,9 +1525,21 @@ function relayDoPost_(e) {
   return ContentService.createTextOutput(JSON.stringify(result)).setMimeType(ContentService.MimeType.JSON);
 }
 
-/** 健康檢查：瀏覽器開啟 Web App 網址會看到這段文字 (版本字樣用來確認部署的是新版) */
-function doGet() {
-  return ContentService.createTextOutput('Telegram AI Bot (Google Apps Script) is running. v2.3');
+/**
+ * GET 入口
+ * - ?action=recent&token=WEBHOOK_SECRET&n=5：最近 n 則提問與來源 (npm run mode 用)，回傳 JSON
+ * - 其他：健康檢查，瀏覽器開啟 Web App 網址會看到這段文字 (版本字樣用來確認部署的是新版)
+ */
+function doGet(e) {
+  const params = (e && e.parameter) || {};
+  if (params.action === 'recent') {
+    const secret = getConfig().WEBHOOK_SECRET;
+    const result = !secret || params.token !== secret
+      ? { ok: false, error: 'token 不符：.env 的 WEBHOOK_SECRET 要與 GAS 指令碼屬性相同' }
+      : { ok: true, items: getRecentInteractions(Math.min(Math.max(parseInt(params.n, 10) || 5, 1), 20)) };
+    return ContentService.createTextOutput(JSON.stringify(result)).setMimeType(ContentService.MimeType.JSON);
+  }
+  return ContentService.createTextOutput('Telegram AI Bot (Google Apps Script) is running. v2.4');
 }
 
 /**
@@ -2308,7 +2327,7 @@ const SHEET_LOGS = 'Logs';
 const SHEET_HEADERS = {
   [SHEET_HISTORY]: ['user_id', 'history_json', 'updated_at'],
   [SHEET_QUOTA]: ['date', 'user_id', 'count'],
-  [SHEET_LOGS]: ['timestamp', 'user_id', 'user_name', 'prompt', 'response', 'tokens', 'daily_count', 'model'],
+  [SHEET_LOGS]: ['timestamp', 'user_id', 'user_name', 'prompt', 'response', 'tokens', 'daily_count', 'model', 'source'],
 };
 // 這些欄位存成純文字，避免試算表把日期、長數字自動轉型
 const SHEET_TEXT_COLUMNS = {
@@ -2353,6 +2372,10 @@ function getSheet_(name) {
     for (const col of SHEET_TEXT_COLUMNS[name] || []) {
       sheet.getRange(1, col, sheet.getMaxRows(), 1).setNumberFormat('@');
     }
+  } else if (sheet.getLastColumn() < SHEET_HEADERS[name].length) {
+    // 舊版建立的分頁少了新欄位 (例如 Logs 的 source)，補上標題列
+    const headers = SHEET_HEADERS[name];
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
   }
   return sheet;
 }
@@ -2579,10 +2602,32 @@ function logInteraction(record) {
       JSON.stringify(record.tokens || {}),
       record.dailyCount || 0,
       record.model || '',
+      record.source || '',
     ]);
   } catch (e) {
     console.error(`寫入互動日誌失敗: ${e}`);
   }
+}
+
+/** 請求來源代碼 → 顯示文字 */
+const REQUEST_SOURCE_LABELS = {
+  webhook: '📨 Telegram webhook (GAS 獨立模式)',
+  relay: '🛰️ 轉接站',
+  simulate: '🧪 編輯器 simulate',
+};
+
+/** 最近 n 則提問 (不含回覆內容)：[{time, userName, prompt, model, source, sourceLabel}] */
+function getRecentInteractions(n) {
+  const rows = getDataRows_(getSheet_(SHEET_LOGS)).slice(-n);
+  return rows.reverse().map((r) => ({
+    // 試算表會把時間欄自動轉成日期型別，要連時分秒一起格式化
+    time: r[0] instanceof Date ? Utilities.formatDate(r[0], getTimeZone_(), 'yyyy-MM-dd HH:mm:ss') : String(r[0]).replace('T', ' '),
+    userName: String(r[2] || ''),
+    prompt: String(r[3] || '').slice(0, 60),
+    model: String(r[7] || ''),
+    source: String(r[8] || ''),
+    sourceLabel: REQUEST_SOURCE_LABELS[r[8]] || '(未記錄來源)',
+  }));
 }
 
 // ===== Webhook 去重 =====
