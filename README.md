@@ -9,7 +9,7 @@ Telegram 聊天機器人：**電腦上的轉接站**向 Telegram 拿訊息、印
 | [`relay/relay.js`](relay/relay.js) | **轉接站程式** (在你的電腦上跑，每一題都印在視窗上) |
 | [`appsscript.json`](appsscript.json) | GAS 專案設定 (台北時區、網頁應用程式權限) |
 | `src/` | `Code.gs` 的原始碼，依功能分檔 (clasp 推送的是這裡) |
-| `test/` | 自動測試 (`npm test`，85 項) |
+| `test/` | 自動測試 (`npm test`，86 項) |
 
 **文件**：[CHANGELOG](CHANGELOG.md) 版本紀錄・[DECISIONS](DECISIONS.md) 架構決策・[KNOWN_ISSUES](KNOWN_ISSUES.md) 已知問題・[WORKFLOW_GUIDE](WORKFLOW_GUIDE.md) 開發與部署流程・[AGENTS](AGENTS.md) 程式規範
 
@@ -25,8 +25,10 @@ Telegram 聊天機器人：**電腦上的轉接站**向 Telegram 拿訊息、印
 
 - **轉接站** (電腦上)：向 Telegram 拿新訊息 (getUpdates)、印出題目、交給 GAS，再印出 GAS 的搜尋過程與回覆。只需要 Telegram Token 與 GAS 網址，**Gemini 金鑰只放在 GAS**
 - **GAS** (Google 雲端)：白名單、每日額度、對話記憶 (Google 試算表)、搜尋、讀網頁、呼叫 Gemini、回覆 Telegram
-- **為什麼不讓 Telegram 直接 webhook 到 GAS**：GAS 網頁應用程式一律回 `302` 轉址，Telegram 把它當成失敗，重試間隔越拉越長，實測幾則訊息後 bot 就卡住不回。改由轉接站主動拿訊息就沒有這個問題，而且不需要 cloudflared 通道或固定 IP
-- **電腦關機時 (GAS 獨立模式)**：轉接站按 `Ctrl+C` 結束時會把 webhook 設回 GAS，由 GAS 自己回答；受上面的 302 問題影響，可能越來越慢甚至卡住。下次開轉接站時，Telegram 保留的未處理訊息 (最多 24 小時) 會被補答
+- **兩種模式都穩定**：
+  - **轉接站模式** (`npm run relay`)：每一題、搜尋過程與回覆都印在電腦視窗上，方便觀察；不需要 cloudflared 通道或固定 IP
+  - **GAS 獨立模式** (電腦關機時)：轉接站按 `Ctrl+C` 結束會把 webhook 設回 GAS，Telegram 直接把訊息送到 GAS 回答
+  - 切換時不會漏訊息：Telegram 保留未處理的訊息 (最多 24 小時)，`update_id` 去重避免重複回答
 
 ## 📦 怎麼裝
 
@@ -61,7 +63,7 @@ Telegram 聊天機器人：**電腦上的轉接站**向 Telegram 拿訊息、印
    1. 「部署 → 新增部署作業 → 網頁應用程式」：執行身分「我」、存取權「**所有人**」
    2. 複製 `/exec` 結尾的網址，填入指令碼屬性 `WEBHOOK_URL`
    3. 執行 `setWebhook` (會自動產生 `WEBHOOK_SECRET`、註冊指令選單)
-   4. 瀏覽器開啟 `/exec` 網址，看到 `… is running. relay-v2` 代表部署的是新版
+   4. 瀏覽器開啟 `/exec` 網址，看到 `… is running. v2.2` 代表部署的是新版
 
    > 改了程式後：`npm run push`，再「部署 → 管理部署作業 → 編輯 (鉛筆) → 版本：**新版本** → 部署」，網址不變。
    > 部署作業綁定的是「當時的版本」，只 push 不建立新版本，網址跑的還是舊程式。
@@ -100,7 +102,7 @@ npm run relay
 [11:47:21] ✅ 完成 (14.7 秒)
 ```
 
-`Ctrl+C` 結束轉接站後，webhook 會設回 GAS (GAS 獨立模式)。
+`Ctrl+C` 結束轉接站後，webhook 會設回 GAS (GAS 獨立模式)，電腦關機也能繼續回答。
 
 其他執行方式：
 
@@ -125,13 +127,13 @@ npm run relay
 | 資料 | 本機 JSON 檔 | **Google 試算表** (對話、配額、日誌) |
 | 設定與金鑰 | `.env` | GAS **指令碼屬性**；轉接站 `.env` 只放 Telegram Token 與 GAS 網址 (不進版控) |
 | 程式語言 | Python | JavaScript：GAS (V8) + 轉接站 (Node.js，零套件) |
-| 測試 | pytest | Node 內建 test runner，85 項 (模擬 GAS 環境，不連網) |
+| 測試 | pytest | Node 內建 test runner，86 項 (模擬 GAS 環境，不連網) |
 
 細節：
 
 - **搜尋判斷**：沿用 W6 的 router 模式，先讓模型輸出 JSON `{need_search, query}`，寫程式、翻譯、閒聊不搜尋；也可切換成原生 Function Calling (`SEARCH_DECISION=tools`)
 - **Gemini 3 的工具呼叫**：Gemini 3 的工具呼叫帶有模型產生的簽章 (thoughtSignature)，不能像 W6 那樣自己假造一筆工具呼叫，所以 router 模式改成把搜尋結果附在使用者問題後面
-- **轉接站模式**：一開始讓 Telegram 直接 webhook 到 GAS，結果因為 GAS 一律回 302，Telegram 越重試越慢、最後不再送訊息；改成轉接站用 getUpdates 主動拿訊息後就穩定了
+- **webhook 回應改用 HtmlService**：一開始 `doPost` 用 `ContentService` 回應，GAS 會把它 302 轉址，Telegram 視為失敗、越重試越慢，最後不再送訊息。對照 W5 / W6 的 GAS bot (用 `HtmlService` 回應，直接回 200) 後找到原因，改用 `HtmlService` 就穩定了 (見 DECISIONS ADR-012)
 - **防重複回答**：同一則訊息重送時以 `update_id` 去重
 - **安全**：webhook 與轉接站輪詢都要帶 `WEBHOOK_SECRET`，否則拒絕；白名單外的人只會看到自己的 User ID
 - **時區**：配額與「今天日期」固定用台北時間
@@ -178,10 +180,10 @@ npm run relay
 
 | 現象 | 排查 |
 |---|---|
-| 轉接站顯示「收到網頁而不是 JSON」 | 網頁應用程式存取權不是「所有人」，或部署的不是新版本 (開 `/exec` 網址看有沒有 `relay-v2`)。學校帳號若只能選「網域內使用者」，請改用個人 Gmail |
+| 轉接站顯示「收到網頁而不是 JSON」 | 網頁應用程式存取權不是「所有人」，或部署的不是新版本 (開 `/exec` 網址看版本字樣是否為最新，目前 `v2.2`)。學校帳號若只能選「網域內使用者」，請改用個人 Gmail |
 | 轉接站顯示「token 不符」 | `.env` 的 `WEBHOOK_SECRET` 要和指令碼屬性完全相同 |
 | 轉接站顯示 `Conflict` | 有另一個轉接站或 W6 Python 版在跑 (同一個 Token 只能有一個程式拿訊息) |
-| 沒開轉接站時 bot 越來越慢、不回 | GAS 獨立模式受 302 影響；開轉接站即可，未處理的訊息會補答 |
+| bot 不回 | 轉接站有沒有在跑；沒有時 webhook 是否指向 GAS (`getWebhookInfo`，轉接站異常結束時不會自動設回，見 KNOWN_ISSUES ISSUE-005) |
 | `Gemini API 使用量已達上限` | 主模型與備援模型的免費額度都用完了，可在 `GEMINI_FALLBACK_MODELS` 多加模型 |
 | 想看 GAS 自己能不能回答 | GAS 編輯器執行 `simulate` (不經過 Telegram)，看執行紀錄 |
 | 偶爾一行 HTTP 404 | 剛重新部署時 Google 還在同步，稍等即可 |

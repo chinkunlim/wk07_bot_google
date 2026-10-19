@@ -4,7 +4,7 @@
 
 | ID | 問題 | 狀態 |
 |---|---|---|
-| [001](#issue-001-gas-獨立模式越來越慢最後不回) | GAS 獨立模式越來越慢、最後不回 (302) | 🟡 |
+| [001](#issue-001-gas-獨立模式越來越慢最後不回) | GAS 獨立模式越來越慢、最後不回 (302) | 🟢 |
 | [002](#issue-002-push-之後網址跑的還是舊程式) | push 之後網址跑的還是舊程式 | 🟡 |
 | [003](#issue-003-開著的舊編輯器分頁把新程式蓋回去) | 開著的舊編輯器分頁把新程式蓋回去 | 🟡 |
 | [004](#issue-004-clasp-create-覆蓋-appsscriptjson) | `clasp create` 覆蓋 `appsscript.json` | 🟡 |
@@ -26,13 +26,15 @@
 
 ## ISSUE-001 GAS 獨立模式越來越慢、最後不回
 
+- **狀態**：🟢 已解決 (2.2.0)。
 - **現象**：沒開轉接站時 (webhook 指向 GAS)，前幾則訊息正常，之後回覆越來越慢甚至不回；`getWebhookInfo` 顯示 `Wrong response from the webhook: 302 Found`，`pending_update_count` 一直累積。
-- **原因**：GAS 網頁應用程式一律回 302 轉址，Telegram 視為投遞失敗，重送並逐次拉長重試間隔，新訊息排在後面。程式碼端無法改變 302。
-- **規避**：開轉接站 (`npm run relay`)，它改用 getUpdates 拿訊息，沒有這個問題；Telegram 保留的未處理訊息會被補答。見 ADR-007、ADR-008。
+- **原因**：`doPost` 用 `ContentService.createTextOutput()` 回應，GAS 會把它 302 轉址到 `script.googleusercontent.com`；Telegram 不跟隨轉址、視為投遞失敗，重送並逐次拉長重試間隔，新訊息排在後面。(2.0.0 時誤判為「GAS 一律回 302、無法改變」。)
+- **解決**：Telegram 路徑改回傳 `HtmlService.createHtmlOutput()` (`webhookResponse_()`)，直接回 200。見 ADR-012。
+- **防止再發生**：`test/relay.test.js` 檢查所有 Telegram 路徑都回 HtmlService；若 `getWebhookInfo` 再出現 302，先檢查 `doPost` 的回傳值。
 
 ## ISSUE-002 push 之後網址跑的還是舊程式
 
-- **現象**：`npm run push` 成功，但 bot 行為沒變；開 `/exec` 網址看不到 `relay-v2`。
+- **現象**：`npm run push` 成功，但 bot 行為沒變；開 `/exec` 網址看到的版本字樣 (目前 `v2.2`) 不是最新的。
 - **原因**：部署作業綁定的是「建立版本當時」的程式快照，push 只更新 HEAD。在「管理部署作業」打開再按部署而沒選「新版本」，版本不會變；「新增部署作業」則會產生另一個網址。
 - **規避**：`npm run redeploy -- <deploymentId>` (deploymentId 用 `npm run deployments` 查，對照 `WEBHOOK_URL` 中 `/s/` 後那段)，或編輯器「管理部署作業 → 鉛筆 → 版本：新版本 → 部署」。
 

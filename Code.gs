@@ -1464,7 +1464,7 @@ const BOT_COMMANDS = [
  * POST 入口
  * - ?action=ask&token=...：電腦上的轉接站送來的訊息 (主要模式，見 Relay.js)，回傳 JSON
  * - ?secret=...：Telegram webhook (GAS 獨立模式，setWebhook 設定)
- * 錯誤只寫日誌，避免 Telegram 重送
+ * 錯誤只寫日誌；Telegram 路徑一律回 HtmlService (HTTP 200)，見 webhookResponse_
  */
 function doPost(e) {
   const params = (e && e.parameter) || {};
@@ -1476,12 +1476,12 @@ function doPost(e) {
     // GAS 讀不到 X-Telegram-Bot-Api-Secret-Token 標頭，改以網址參數驗證來源
     if (cfg.WEBHOOK_SECRET && (!e || !e.parameter || e.parameter.secret !== cfg.WEBHOOK_SECRET)) {
       console.warn('webhook secret 不符，忽略請求');
-      return ContentService.createTextOutput('forbidden');
+      return webhookResponse_('forbidden');
     }
     update = JSON.parse(e.postData.contents);
     if (isDuplicateUpdate(update.update_id)) {
       console.log(`重複的 update ${update.update_id}，略過`);
-      return ContentService.createTextOutput('ok');
+      return webhookResponse_('ok');
     }
     handleUpdate(update);
   } catch (err) {
@@ -1490,10 +1490,19 @@ function doPost(e) {
     const chatId = update && update.message && update.message.chat && update.message.chat.id;
     if (chatId) tgSendMessage(chatId, '❌ 發生未預期的錯誤，請稍後再試。', null);
   }
-  return ContentService.createTextOutput('ok');
+  return webhookResponse_('ok');
 }
 
-/** 轉接站的請求：處理訊息並回傳 JSON (回覆內容與過程紀錄，讓轉接站印出) */
+/**
+ * 回給 Telegram webhook 的回應：必須用 HtmlService
+ * ContentService 的輸出會被 GAS 302 轉址到 script.googleusercontent.com，Telegram 不跟隨轉址，
+ * 視為投遞失敗並逐次拉長重試間隔，bot 會越來越慢、最後不回；HtmlService 由 script.google.com 直接回 200
+ */
+function webhookResponse_(text) {
+  return HtmlService.createHtmlOutput(text);
+}
+
+/** 轉接站的請求：處理訊息並回傳 JSON (回覆內容與過程紀錄，讓轉接站印出)；轉接站會跟隨 302，可用 ContentService */
 function relayDoPost_(e) {
   let result;
   try {
@@ -1508,7 +1517,7 @@ function relayDoPost_(e) {
 
 /** 健康檢查：瀏覽器開啟 Web App 網址會看到這段文字 (版本字樣用來確認部署的是新版) */
 function doGet() {
-  return ContentService.createTextOutput('Telegram AI Bot (Google Apps Script) is running. relay-v2');
+  return ContentService.createTextOutput('Telegram AI Bot (Google Apps Script) is running. v2.2');
 }
 
 /**
@@ -1775,9 +1784,8 @@ function enrichResults(results, query, pages, maxChars) {
  *                                   ☁️ GAS doPost → 搜尋 + Gemini → 回覆 Telegram
  *                                          │ 回傳 {replies, logs} 給轉接站印出
  *
- * 為什麼不讓 Telegram 直接 webhook 到 GAS：GAS 網頁應用程式一律回 302 轉址，
- * Telegram 把 302 當成失敗並逐次拉長重試間隔，訊息會越來越慢、最後卡住。
- * 轉接站主動向 Telegram 拿訊息就沒有這個問題；GAS 獨立模式 (setWebhook) 仍保留作為備援。
+ * 轉接站模式讓每一題、搜尋過程與回覆即時印在電腦視窗；轉接站關掉時 webhook 設回 GAS (GAS 獨立模式)，
+ * Telegram 直接送到 doPost 處理，兩種模式都穩定 (webhook 回應用 HtmlService，見 Main.js webhookResponse_)。
  */
 
 let RELAY_CAPTURE_ = null;

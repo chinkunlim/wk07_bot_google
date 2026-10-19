@@ -84,7 +84,22 @@ test('Telegram webhook (GAS 獨立模式) 仍可直接處理', () => {
   const t = setupGas();
   t.g.get('doPost')({ parameter: { secret: SECRET }, postData: { contents: JSON.stringify(makeUpdate(5, '/help')) } });
   assert.equal(t.telegram.filter((c) => c.method === 'sendMessage').length, 1);
-  assert.match(t.g.get('doGet')().getContent(), /relay-v2/);
+  assert.match(t.g.get('doGet')().getContent(), /v2\.2/);
+});
+
+test('Telegram webhook 一律回 HtmlService (HTTP 200)，不用會被 302 轉址的 ContentService', () => {
+  const t = setupGas();
+  const post = (secret, update) => t.g.get('doPost')({
+    parameter: { secret }, postData: { contents: JSON.stringify(update) },
+  });
+  assert.equal(post(SECRET, makeUpdate(20, '/help')).service, 'HtmlService');
+  assert.equal(post(SECRET, makeUpdate(20, '/help')).service, 'HtmlService'); // 重複
+  assert.equal(post('wrong', makeUpdate(21, '/help')).service, 'HtmlService'); // secret 不符
+  assert.equal(t.g.get('doPost')({ parameter: { secret: SECRET }, postData: { contents: '不是 JSON' } }).service, 'HtmlService');
+  // 轉接站的 ask 介面回 JSON (轉接站會跟隨 302)
+  assert.equal(t.g.get('doPost')({
+    parameter: { action: 'ask', token: SECRET }, postData: { contents: JSON.stringify(makeUpdate(22, '/help')) },
+  }).service, 'ContentService');
 });
 
 test('轉接站：把 update 交給 GAS、印出題目與回覆 (端對端，假網路)', () => {

@@ -15,7 +15,7 @@
 ```
 
 - **GAS** 負責所有邏輯與金鑰 (Gemini API key、試算表)；**轉接站**只負責拿訊息、轉交、印出
-- **GAS 獨立模式**：Telegram webhook → `doPost` 直接處理 (轉接站 Ctrl+C 時自動切回)；受 302 影響會變慢 (ISSUE-001)
+- **GAS 獨立模式**：Telegram webhook → `doPost` 直接處理 (轉接站 Ctrl+C 時自動切回)，電腦關機也能回
 - 前身是 W6 的 Python + Ollama 版 ([chinkunlim/wk06_local_bot](https://github.com/chinkunlim/wk06_local_bot))，提示詞、Markdown 轉換、關鍵字清洗、內文摘錄演算法由它逐行移植
 
 ## 2. 核心原則
@@ -70,11 +70,17 @@
 - tools 模式要把模型回傳的 `content` **原封不動**加回 (保留 `thoughtSignature`)；**不可自己偽造 functionCall**
 - 不設定 temperature (Gemini 3 建議用預設值)
 
-### 4.5 Telegram 輸出
+### 4.5 Webhook 回應 (重要)
+- **回給 Telegram 的 `doPost` 回應一律用 `webhookResponse_()` (HtmlService)**，不可用 `ContentService`
+- `ContentService` 的輸出會被 GAS 302 轉址到 googleusercontent.com，Telegram 不跟隨轉址、視為失敗，重試間隔越拉越長，bot 最後不回 (ISSUE-001、ADR-012)
+- 轉接站的 ask 介面要回 JSON，可用 `ContentService` (轉接站的 curl 會跟隨 302)
+- `test/relay.test.js` 檢查所有 Telegram 路徑都回 HtmlService
+
+### 4.6 Telegram 輸出
 - 訊息一律用 HTML parse mode；模型輸出經 `markdownToHtml()` 轉換；超過 4000 字以 `splitMessage()` 切段
 - 送出失敗 (can't parse entities) 自動改送純文字
 
-### 4.6 修改共用邏輯
+### 4.7 修改共用邏輯
 提示詞、Markdown 轉換、關鍵字清洗、內文摘錄源自 Python 版；修改時保持行為一致，並更新對應測試 (`test/format.test.js`、`test/pageFetch.test.js`)。
 
 ## 5. 常見修改場景
@@ -94,7 +100,7 @@
 
 | 現象 | 排查 |
 |---|---|
-| bot 不回 | 轉接站有沒有在跑 (`pgrep -fl relay/relay.js`)；沒有時 webhook 是否指向 GAS (`getWebhookInfo`)；見 ISSUE-001、005 |
+| bot 不回 | 轉接站有沒有在跑 (`pgrep -fl relay/relay.js`)；沒有時 webhook 是否指向 GAS (`getWebhookInfo`，ISSUE-005)；`getWebhookInfo` 出現 `302` 代表 webhook 回應被改成了 ContentService (ISSUE-001) |
 | 改了程式沒生效 | 開 `/exec` 確認健康檢查文字；部署是否建立新版本 (ISSUE-002)；是否被舊編輯器分頁蓋回 (ISSUE-003) |
 | 轉接站「收到網頁而不是 JSON」 | 存取權不是「所有人」或部署非新版 (ISSUE-008、002) |
 | 回答不完整或沒有來源 | `SEARCH_FETCH_PAGES` / `SEARCH_PAGE_CHARS`；GAS 執行 `testSearch` |
@@ -104,7 +110,7 @@
 ## 7. 驗證
 
 ```bash
-npm test          # 85 項：格式、搜尋解析、Gemini、儲存、端對端 (假網路)、轉接站、Code.gs 同步
+npm test          # 86 項：格式、搜尋解析、Gemini、儲存、端對端 (假網路)、轉接站、Code.gs 同步
 npm run build     # 修改 src/ 後重新產生 Code.gs (否則 npm test 失敗)
 npm run simulate  # 本機真的連 Gemini 與搜尋 (需 .env 的 GEMINI_API_KEY)
 ```

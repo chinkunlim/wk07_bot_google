@@ -11,12 +11,13 @@
 | [004](#adr-004-預設-router-搜尋判斷搜尋結果附在使用者訊息後) | 預設 router 搜尋判斷，搜尋結果附在使用者訊息後 | 採用 |
 | [005](#adr-005-資料存-google-試算表) | 資料存 Google 試算表 | 採用 |
 | [006](#adr-006-設定與金鑰只放指令碼屬性) | 設定與金鑰只放指令碼屬性 | 採用 |
-| [007](#adr-007-轉接站向-telegram-拉訊息交給-gas-回答) | 轉接站向 Telegram 拉訊息、交給 GAS 回答 | 採用 (取代 007a) |
+| [007](#adr-007-轉接站向-telegram-拉訊息交給-gas-回答) | 轉接站向 Telegram 拉訊息、交給 GAS 回答 | 採用 (取代 007a；理由已由 012 更正) |
 | [007a](#adr-007a-gas-收-webhook-轉接站輪詢-gas-佇列) | GAS 收 webhook、轉接站輪詢 GAS 佇列 | 已取代 (→ 007) |
-| [008](#adr-008-保留-gas-獨立模式作為備援) | 保留 GAS 獨立模式作為備援 | 採用 |
+| [008](#adr-008-保留-gas-獨立模式) | 保留 GAS 獨立模式 | 採用 |
 | [009](#adr-009-src-為唯一原始碼codegs-由建置產生) | `src/` 為唯一原始碼，`Code.gs` 由建置產生 | 採用 |
 | [010](#adr-010-本機用-node-模擬-gas-測試clasp-不裝全域) | 本機用 Node 模擬 GAS 測試，clasp 不裝全域 | 採用 |
 | [011](#adr-011-以-multi-引擎取代-ddgs-套件) | 以 multi 引擎取代 ddgs 套件 | 採用 |
+| [012](#adr-012-telegram-webhook-回應改用-htmlservice) | Telegram webhook 回應改用 HtmlService | 採用 |
 
 ---
 
@@ -70,27 +71,29 @@
 
 ## ADR-007 轉接站向 Telegram 拉訊息、交給 GAS 回答
 
-- **情境**：Telegram webhook 直接打 GAS 時，GAS 網頁應用程式一律回 **302 轉址** (程式無法改變)。Telegram 把 302 當成失敗：重送同一則訊息並逐次拉長間隔，新訊息排在後面。實測幾則訊息後 `pending_update_count` 累積、超過 90 秒沒有任何投遞，bot 完全不回。
+- **情境**：Telegram webhook 直接打 GAS 時，GAS 回 **302 轉址**，Telegram 把 302 當成失敗：重送同一則訊息並逐次拉長間隔，新訊息排在後面。實測幾則訊息後 `pending_update_count` 累積、超過 90 秒沒有任何投遞，bot 完全不回。
+- **⚠️ 更正 (2.2.0)**：當時判斷「GAS 一律回 302、程式無法改變」是錯的。302 是因為 `doPost` 用 `ContentService` 回應；改用 `HtmlService` 就直接回 200 (見 ADR-012)。轉接站仍然保留，理由改為下面的「現在的理由」。
 - **決定**：
   - 電腦上的轉接站 (`relay/relay.js`) 用 `getUpdates` 長輪詢 (25 秒) 主動拿訊息，印出每一題。
   - 轉接站 `POST ?action=ask&token=…` 把 update 交給 GAS；GAS 處理後**直接回覆 Telegram**，並回傳 `{replies, logs, seconds}` 讓轉接站印出過程。
   - 轉接站用 curl：POST 不加 `-X POST`，302 後改用 GET 取得 GAS 回應 (跟瀏覽器行為一致)。
   - 處理過程的重點以 `traceLog` 記錄 (實測在 GAS 覆寫 `console` 無效，攔截不到日誌)。
-- **理由**：getUpdates 沒有 302 問題，秒回且穩定；不需要 cloudflared 通道或固定 IP；Gemini 金鑰與所有邏輯仍集中在 GAS。
-- **代價**：轉接站要開著 bot 才穩定 (見 ADR-008)；一次處理一則訊息。
+- **當初的理由**：getUpdates 沒有 302 問題 (此問題已由 ADR-012 從根本解決)。
+- **現在的理由**：在電腦視窗即時看到每一題、搜尋過程與回覆 (作業要求的「轉接站」)；不需要 cloudflared 通道或固定 IP；Gemini 金鑰與所有邏輯仍集中在 GAS。
+- **代價**：轉接站開著時電腦要開機；一次處理一則訊息 (ISSUE-014)。
 - **取代**：ADR-007a。
 
 ## ADR-007a GAS 收 webhook、轉接站輪詢 GAS 佇列
 
 - **狀態**：已取代 (1.1.0 採用，2.0.0 被 ADR-007 取代)。
 - **內容**：Telegram webhook → GAS `doPost` 把訊息排入 CacheService 佇列；轉接站每 2 秒 `GET ?action=poll` 取題目，在本機用同一份程式 (gasShim) 搜尋並呼叫 Gemini；轉接站 30 秒沒輪詢時 GAS 自己回答。
-- **取代原因**：訊息仍經由 Telegram webhook 進入 GAS，同樣受 302 問題影響而卡住；而且轉接站本機也要放 Gemini 金鑰、對話記憶分散在兩處。
+- **取代原因**：轉接站本機也要放 Gemini 金鑰、對話記憶分散在 GAS 與本機兩處。(當時另一個理由「同樣受 302 影響」實際上是 ContentService 造成的，見 ADR-012。)
 
-## ADR-008 保留 GAS 獨立模式作為備援
+## ADR-008 保留 GAS 獨立模式
 
 - **決定**：保留 Telegram webhook → GAS `doPost` 的路徑 (`setWebhook()`)。轉接站啟動時 `deleteWebhook(drop_pending_updates=false)`，Ctrl+C 結束時 `setWebhook` 設回 GAS (`RELAY_RESTORE_WEBHOOK=false` 可停用)。
-- **理由**：電腦關機時 bot 仍能回答 (即使可能變慢)；下次開轉接站時，Telegram 保留的未處理訊息 (24 小時) 會被補答，`update_id` 去重避免重複回覆。
-- **代價**：獨立模式受 302 影響 (ISSUE-001)；轉接站異常結束時 webhook 不會設回 (ISSUE-005)。
+- **理由**：電腦關機時 bot 仍能回答；ADR-012 之後獨立模式與轉接站模式一樣穩定。切換時 Telegram 保留的未處理訊息 (24 小時) 會被處理，`update_id` 去重避免重複回覆。
+- **代價**：轉接站異常結束時 webhook 不會設回 (ISSUE-005)。
 
 ## ADR-009 `src/` 為唯一原始碼，`Code.gs` 由建置產生
 
@@ -105,7 +108,7 @@
   - `npm run simulate` 用同一個環境 + curl 真的連網，在終端機與 bot 對話。
   - clasp 只裝在專案的 `node_modules`，所有 npm script 帶 `-A .clasprc.json`，登入憑證不寫到家目錄。
 - **理由**：不部署也能測完整流程 (doPost → 搜尋判斷 → Gemini → Telegram，假網路)；不污染本機環境。
-- **代價**：替身行為與真正的 GAS 可能有差異 (例如 `console` 可覆寫、302 行為)，最後仍要在 GAS 編輯器用 `simulate` / `testSearch` 實測。
+- **代價**：替身行為與真正的 GAS 可能有差異 (例如 `console` 可覆寫、ContentService 不會 302 轉址)，最後仍要在 GAS 編輯器用 `simulate` / `testSearch` 實測。
 
 ## ADR-011 以 multi 引擎取代 ddgs 套件
 
@@ -113,3 +116,11 @@
 - **決定**：`multi` 引擎依序嘗試 Bing → DuckDuckGo Lite → Mojeek，以 regex 解析 HTML；Bing 的轉址連結 (`u=a1<base64>`) 還原為真實網址。DuckDuckGo HTML 被機器人驗證擋下 (HTTP 202 / anomaly) 時冷卻 10 分鐘，由備援接手。
 - **理由**：免金鑰、可在 GAS 與 Node 共用；多個引擎降低單一來源被擋的風險。
 - **代價**：HTML 結構改版就要更新解析器 (ISSUE-011)。
+
+## ADR-012 Telegram webhook 回應改用 HtmlService
+
+- **情境**：GAS 獨立模式下 bot 幾則訊息後就不回 (ISSUE-001)。使用者 W5 / W6 的 GAS + Telegram bot 沒有這個問題；對照後發現舊專案 `doPost` 回傳 `HtmlService.createHtmlOutput()`，本專案回傳 `ContentService.createTextOutput()`。
+- **原因**：`ContentService` 的輸出由 `script.googleusercontent.com` 提供，`/exec` 先回 **302** 轉址；Telegram 不跟隨轉址、視為投遞失敗。`HtmlService` 的輸出由 `script.google.com` 直接回 **200**。
+- **決定**：回給 Telegram 的所有路徑 (正常、重複、secret 不符、例外) 一律經 `webhookResponse_()` 回 `HtmlService`；轉接站的 ask 介面維持 `ContentService` 回 JSON (curl 會跟隨 302)；`doGet` 健康檢查維持 `ContentService` 純文字 (給人看與 curl 用)。
+- **驗證**：curl 模擬 Telegram (不跟隨轉址) 回 HTTP 200；不開轉接站連續傳多則訊息全部回答，`pending_update_count` 為 0、部署後沒有新的 webhook 錯誤。
+- **教訓**：「平台限制、無法改變」的結論要先找反例驗證；這次使用者的舊專案就是反例。

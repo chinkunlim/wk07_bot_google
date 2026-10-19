@@ -5,6 +5,20 @@
 
 ---
 
+## [2.2.0] - 2026-10-19
+
+### 修復
+- 🎯 **GAS 獨立模式穩定了 (ISSUE-001 根治)**：Telegram webhook 的回應從 `ContentService` 改為 `HtmlService` (`webhookResponse_()`)，GAS 直接回 HTTP 200，不再被 302 轉址；Telegram 不再判定投遞失敗、拉長重試間隔。不開轉接站、電腦關機時 bot 也能穩定回答
+  - 原因是對照使用者 W5 / W6 的 GAS bot (用 `HtmlService` 回應) 找到的；2.0.0 時「GAS 一律回 302、無法改變」的判斷是錯的
+  - 實測：模擬 Telegram 請求回 200；不開轉接站連續提問全部回答、Telegram 待處理數為 0
+
+### 變更
+- 轉接站保留為「在電腦上觀察每一題與搜尋過程」的模式，不再是穩定運作的必要條件
+- `doGet` 健康檢查字樣改為 `v2.2`
+- 更正 README、DECISIONS (新增 ADR-012，更正 ADR-007、008)、KNOWN_ISSUES、AGENTS、WORKFLOW_GUIDE 中關於 302 的說法
+
+---
+
 ## [2.1.0] - 2026-10-19
 
 ### 新增
@@ -42,7 +56,7 @@
 - README 執行畫面截圖 (`docs/phone.png`、`docs/relay.png`)
 
 ### 修復
-- **Telegram 越來越慢、最後不回**：webhook 直接打 GAS 時 GAS 一律回 302，Telegram 視為失敗並拉長重試間隔 (ISSUE-001)
+- **Telegram 越來越慢、最後不回**：改由轉接站拿訊息來避開 webhook 的 302 問題 (ISSUE-001)。⚠️ 當時對原因的判斷有誤，真正的原因與根治見 2.2.0
 - 本機 curl 送 POST 時不再加 `-X POST`，302 轉址後改用 GET 取得 GAS 回應 (原本會拿到「找不到網頁」)
 
 ---

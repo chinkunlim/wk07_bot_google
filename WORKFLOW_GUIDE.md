@@ -53,7 +53,7 @@
    npm run redeploy -- <deploymentId> --description "說明這次改了什麼"
    ```
    或在編輯器「部署 → 管理部署作業 → 鉛筆 → 版本：新版本 → 部署」。網址不變。
-7. **確認生效**：開 `/exec` 網址看健康檢查文字 (目前為 `relay-v2`)；改了健康檢查以外的程式時，用轉接站問一題確認
+7. **確認生效**：開 `/exec` 網址看健康檢查文字 (目前為 `v2.2`)；改了健康檢查以外的程式時，用轉接站問一題確認
 8. **commit 與 push** (見 §6)
 
 > ⚠️ push 之後，**之前就開著的 GAS 編輯器分頁要先重新整理**，否則在裡面執行任何函式都會把舊程式存回去 (ISSUE-003)。
@@ -67,8 +67,8 @@
 
 | 模式 | 怎麼進入 | 特性 |
 |---|---|---|
-| **轉接站模式** (主要) | `npm run relay` (會自動移除 webhook) | 秒回、穩定；視窗印出每一題與搜尋過程；電腦要開著 |
-| **GAS 獨立模式** (備援) | 轉接站 Ctrl+C 結束 (自動設回 webhook)，或 GAS 編輯器執行 `setWebhook` | 電腦關機也能回，但受 302 影響可能越來越慢 (ISSUE-001) |
+| **轉接站模式** | `npm run relay` (會自動移除 webhook) | 視窗印出每一題、搜尋過程與回覆；電腦要開著 |
+| **GAS 獨立模式** | 轉接站 Ctrl+C 結束 (自動設回 webhook)，或 GAS 編輯器執行 `setWebhook` | Telegram 直接送到 GAS，電腦關機也能回 |
 
 - 同一個 Bot Token 同時只能有一個轉接站 (或 W6 Python 版) 在拿訊息，否則出現 `Conflict`
 - 轉接站異常結束 (關機、當機) 時 webhook 不會設回，bot 會不回直到重開轉接站或執行 `setWebhook` (ISSUE-005)
@@ -88,7 +88,7 @@
 原則：
 - 修 bug 先寫能重現的測試；外部網站解析改用 `test/fixtures/` 的 HTML，不在測試中連網
 - vm 內建立的陣列 / 物件與測試屬於不同 realm，比較前用 `JSON.parse(JSON.stringify(x))`
-- 替身 (`dev/gasShim.js`) 與真正 GAS 有差異 (例如 GAS 無法覆寫 `console`、302 行為)，重要改動要做 GAS 實測
+- 替身 (`dev/gasShim.js`) 與真正 GAS 有差異 (例如 GAS 無法覆寫 `console`、ContentService 會被 302 轉址)，重要改動要做 GAS 實測
 
 ## 6. 版本控管
 
@@ -118,7 +118,7 @@
 | 狀況 | 參考 |
 |---|---|
 | 推了程式但沒變化 | ISSUE-002、003 |
-| bot 不回 / 越來越慢 | ISSUE-001、005 |
+| bot 不回 | ISSUE-005；webhook 回應必須是 HtmlService (ISSUE-001) |
 | 轉接站「收到網頁而不是 JSON」 | ISSUE-008、002 |
 | 瀏覽器開網址顯示無法開啟 | ISSUE-006 |
 | 額度用完 | ISSUE-010 |

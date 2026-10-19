@@ -7,9 +7,8 @@
  *                                   ☁️ GAS doPost → 搜尋 + Gemini → 回覆 Telegram
  *                                          │ 回傳 {replies, logs} 給轉接站印出
  *
- * 為什麼不讓 Telegram 直接 webhook 到 GAS：GAS 網頁應用程式一律回 302 轉址，
- * Telegram 把 302 當成失敗並逐次拉長重試間隔，訊息會越來越慢、最後卡住。
- * 轉接站主動向 Telegram 拿訊息就沒有這個問題；GAS 獨立模式 (setWebhook) 仍保留作為備援。
+ * 轉接站模式讓每一題、搜尋過程與回覆即時印在電腦視窗；轉接站關掉時 webhook 設回 GAS (GAS 獨立模式)，
+ * Telegram 直接送到 doPost 處理，兩種模式都穩定 (webhook 回應用 HtmlService，見 Main.js webhookResponse_)。
  */
 
 let RELAY_CAPTURE_ = null;

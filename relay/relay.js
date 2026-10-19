@@ -7,8 +7,7 @@
  *                                          ▼
  *                                   ☁️ GAS (Code.gs)：搜尋 + Gemini → 直接回覆 Telegram
  *
- * 為什麼由轉接站主動拿訊息：GAS 網頁應用程式一律回 302，Telegram webhook 把它當成失敗並拉長重試間隔，
- * 訊息會越來越慢、最後卡住；改用 getUpdates 就沒有這個問題。
+ * 用途：在電腦視窗即時看到每一題、GAS 的搜尋過程與回覆；不需要 cloudflared 通道或固定 IP。
  * 啟動時移除 webhook (getUpdates 與 webhook 不能並存)；Ctrl+C 結束時把 webhook 設回 GAS，
  * 電腦關機期間改由 GAS 獨立回答 (RELAY_RESTORE_WEBHOOK=false 可停用)。
  *

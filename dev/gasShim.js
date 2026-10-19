@@ -2,7 +2,7 @@
  * 在本機 Node 執行 GAS 程式碼的模擬環境 (測試與本機模擬共用)
  * - 把 src/*.js 全部載入同一個 vm context，等同 GAS 的共用全域命名空間
  * - 提供 PropertiesService / CacheService / LockService / Utilities / Session /
- *   UrlFetchApp / SpreadsheetApp / ContentService 的最小替身
+ *   UrlFetchApp / SpreadsheetApp / ContentService / HtmlService 的最小替身
  * 不需安裝任何套件；UrlFetchApp 預設不連網 (測試注入假 fetch，模擬模式改用 curl)
  */
 const fs = require('node:fs');
@@ -270,11 +270,17 @@ function loadGas(options = {}) {
         return spreadsheets[id];
       },
     },
+    HtmlService: {
+      // 真正的 GAS：HtmlService 輸出由 script.google.com 直接回 200
+      createHtmlOutput: (html) => ({ service: 'HtmlService', getContent: () => html }),
+    },
     ContentService: {
       MimeType: { JSON: 'application/json', TEXT: 'text/plain' },
       createTextOutput: (text) => {
         let mimeType = 'text/plain';
         const output = {
+          // 真正的 GAS：ContentService 輸出會被 302 轉址 (見 src/Main.js webhookResponse_)
+          service: 'ContentService',
           getContent: () => text,
           getMimeType: () => mimeType,
           setMimeType: (m) => { mimeType = m; return output; },

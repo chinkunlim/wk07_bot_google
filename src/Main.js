@@ -17,7 +17,7 @@ const BOT_COMMANDS = [
  * POST 入口
  * - ?action=ask&token=...：電腦上的轉接站送來的訊息 (主要模式，見 Relay.js)，回傳 JSON
  * - ?secret=...：Telegram webhook (GAS 獨立模式，setWebhook 設定)
- * 錯誤只寫日誌，避免 Telegram 重送
+ * 錯誤只寫日誌；Telegram 路徑一律回 HtmlService (HTTP 200)，見 webhookResponse_
  */
 function doPost(e) {
   const params = (e && e.parameter) || {};
@@ -29,12 +29,12 @@ function doPost(e) {
     // GAS 讀不到 X-Telegram-Bot-Api-Secret-Token 標頭，改以網址參數驗證來源
     if (cfg.WEBHOOK_SECRET && (!e || !e.parameter || e.parameter.secret !== cfg.WEBHOOK_SECRET)) {
       console.warn('webhook secret 不符，忽略請求');
-      return ContentService.createTextOutput('forbidden');
+      return webhookResponse_('forbidden');
     }
     update = JSON.parse(e.postData.contents);
     if (isDuplicateUpdate(update.update_id)) {
       console.log(`重複的 update ${update.update_id}，略過`);
-      return ContentService.createTextOutput('ok');
+      return webhookResponse_('ok');
     }
     handleUpdate(update);
   } catch (err) {
@@ -43,10 +43,19 @@ function doPost(e) {
     const chatId = update && update.message && update.message.chat && update.message.chat.id;
     if (chatId) tgSendMessage(chatId, '❌ 發生未預期的錯誤，請稍後再試。', null);
   }
-  return ContentService.createTextOutput('ok');
+  return webhookResponse_('ok');
 }
 
-/** 轉接站的請求：處理訊息並回傳 JSON (回覆內容與過程紀錄，讓轉接站印出) */
+/**
+ * 回給 Telegram webhook 的回應：必須用 HtmlService
+ * ContentService 的輸出會被 GAS 302 轉址到 script.googleusercontent.com，Telegram 不跟隨轉址，
+ * 視為投遞失敗並逐次拉長重試間隔，bot 會越來越慢、最後不回；HtmlService 由 script.google.com 直接回 200
+ */
+function webhookResponse_(text) {
+  return HtmlService.createHtmlOutput(text);
+}
+
+/** 轉接站的請求：處理訊息並回傳 JSON (回覆內容與過程紀錄，讓轉接站印出)；轉接站會跟隨 302，可用 ContentService */
 function relayDoPost_(e) {
   let result;
   try {
@@ -61,7 +70,7 @@ function relayDoPost_(e) {
 
 /** 健康檢查：瀏覽器開啟 Web App 網址會看到這段文字 (版本字樣用來確認部署的是新版) */
 function doGet() {
-  return ContentService.createTextOutput('Telegram AI Bot (Google Apps Script) is running. relay-v2');
+  return ContentService.createTextOutput('Telegram AI Bot (Google Apps Script) is running. v2.2');
 }
 
 /**
