@@ -12,7 +12,6 @@
 
 const SUPPORTED_SEARCH_ENGINES = ['duckduckgo', 'google_news', 'multi'];
 const SUPPORTED_SEARCH_DECISIONS = ['router', 'tools'];
-const SUPPORTED_RELAY_MODES = ['auto', 'off'];
 
 // 字串預設值；數字欄位於 getConfig 轉型
 const CONFIG_DEFAULTS = {
@@ -50,10 +49,6 @@ const CONFIG_DEFAULTS = {
   // === 對話 / 配額 ===
   MAX_HISTORY_TURNS: '4',
   MAX_DAILY_REQUESTS: '50',
-
-  // === 轉接站 ===
-  // auto：電腦上的轉接站 (npm run relay) 在線時由它回答，離線時 GAS 自己回答；off：一律 GAS 回答
-  RELAY_MODE: 'auto',
 
   // === 儲存 ===
   // 對話歷史 / 配額 / 日誌的試算表；留空時第一次執行自動建立並寫回
@@ -134,9 +129,6 @@ function validateConfig(cfg, requireTelegram) {
   if (!cfg.GEMINI_API_KEY) errors.push('GEMINI_API_KEY 未設定 (到 https://aistudio.google.com/apikey 建立)');
   if (!SUPPORTED_SEARCH_DECISIONS.includes(cfg.SEARCH_DECISION)) {
     errors.push(`SEARCH_DECISION=${cfg.SEARCH_DECISION} 不支援 (可用: ${SUPPORTED_SEARCH_DECISIONS.join(' | ')})`);
-  }
-  if (!SUPPORTED_RELAY_MODES.includes(cfg.RELAY_MODE)) {
-    errors.push(`RELAY_MODE=${cfg.RELAY_MODE} 不支援 (可用: ${SUPPORTED_RELAY_MODES.join(' | ')})`);
   }
   if (cfg.SEARCH_FALLBACK_ENGINE && !SUPPORTED_SEARCH_ENGINES.includes(cfg.SEARCH_FALLBACK_ENGINE)) {
     errors.push(
@@ -732,7 +724,7 @@ function geminiExhaustedSeconds(err) {
 function markGeminiModelExhausted_(model, err) {
   const seconds = geminiExhaustedSeconds(err);
   CacheService.getScriptCache().put(GEMINI_EXHAUSTED_CACHE_PREFIX + model, '1', seconds);
-  console.warn(`⏸️ ${model} 暫停使用 ${seconds} 秒 (HTTP ${err.status})`);
+  traceWarn(`⏸️ ${model} 暫停使用 ${seconds} 秒 (HTTP ${err.status})`);
 }
 
 /** 依序排列要嘗試的模型：最近額度用完的排到後面 (全部用完時仍會照順序嘗試) */
@@ -757,7 +749,7 @@ function generateWithFallback_(models, payload) {
       const switchable = e instanceof GeminiError && GEMINI_FALLBACK_STATUSES.includes(e.status);
       if (switchable) markGeminiModelExhausted_(model, e);
       if (!switchable || isLast) throw e;
-      console.warn(`↪️ 改用備援模型 ${models[i + 1]}`);
+      traceWarn(`↪️ 改用備援模型 ${models[i + 1]}`);
     }
   }
   throw new GeminiError('沒有可用的 Gemini 模型', 404);
@@ -873,6 +865,7 @@ function sendStatus(ctx, text) {
 
 /** 發送最終回覆 (替換狀態訊息，過長自動分段) */
 function sendFinalResponse(ctx, text) {
+  captureRelayReply_(text);
   const statusId = ctx.statusMessageId;
   ctx.statusMessageId = null;
   const chunks = splitMessage(text);
@@ -1108,7 +1101,7 @@ function processQuery(ctx, userQuery, quota) {
 function runSearchTool(args) {
   const query = String((args && args.query) || '').trim();
   if (!query) return { content: '錯誤：search_web 需要 query 參數', record: null };
-  console.log(`🔧 模型呼叫搜尋: "${query}"`);
+  traceLog(`🔧 模型呼叫搜尋: "${query}"`);
   const cfg = getConfig();
   let results;
   try {
@@ -1187,7 +1180,7 @@ function routerSearch(ctx, history, userQuery, contents, toolResults, usage, tod
   const recent = historyToContents(history.slice(-4)).concat([{ role: 'user', parts: [{ text: userQuery }] }]);
   const decision = decideSearch(recent, today);
   addUsage(usage, decision.usage);
-  console.log(`🧭 搜尋判斷: ${JSON.stringify({ need_search: decision.need_search, query: decision.query })}`);
+  traceLog(`🧭 搜尋判斷: ${JSON.stringify({ need_search: decision.need_search, query: decision.query })}`);
   if (!decision.need_search) return;
 
   const query = decision.query || userQuery;
@@ -1467,8 +1460,16 @@ const BOT_COMMANDS = [
   { command: 'help', description: '使用說明' },
 ];
 
-/** Telegram webhook 入口；一律回 200，錯誤只寫日誌，避免 Telegram 重送 */
+/**
+ * POST 入口
+ * - ?action=ask&token=...：電腦上的轉接站送來的訊息 (主要模式，見 Relay.js)，回傳 JSON
+ * - ?secret=...：Telegram webhook (GAS 獨立模式，setWebhook 設定)
+ * 錯誤只寫日誌，避免 Telegram 重送
+ */
 function doPost(e) {
+  const params = (e && e.parameter) || {};
+  if (params.action === 'ask') return relayDoPost_(e);
+
   let update = null;
   try {
     const cfg = getConfig();
@@ -1482,12 +1483,6 @@ function doPost(e) {
       console.log(`重複的 update ${update.update_id}，略過`);
       return ContentService.createTextOutput('ok');
     }
-    // 轉接站在線就交給它處理；離線時 GAS 自己回答
-    if (update.message && typeof update.message.text === 'string' && isRelayOnline()) {
-      enqueueRelayUpdate(update);
-      console.log(`📮 update ${update.update_id} 已排入轉接站佇列`);
-      return ContentService.createTextOutput('ok');
-    }
     handleUpdate(update);
   } catch (err) {
     // 全域錯誤處理：記錄堆疊，盡量回覆使用者
@@ -1498,16 +1493,22 @@ function doPost(e) {
   return ContentService.createTextOutput('ok');
 }
 
-/**
- * GET 入口
- * - ?action=poll&token=...：轉接站輪詢題目 (見 Relay.js)
- * - 其他：健康檢查，瀏覽器開啟 Web App 網址會看到這段文字
- */
-function doGet(e) {
-  const params = (e && e.parameter) || {};
-  if (params.action === 'poll') return relayPoll(params.token);
-  const relay = isRelayOnline() ? '轉接站在線' : '轉接站離線 (由 GAS 直接回答)';
-  return ContentService.createTextOutput(`Telegram AI Bot (Google Apps Script) is running. ${relay}`);
+/** 轉接站的請求：處理訊息並回傳 JSON (回覆內容與過程紀錄，讓轉接站印出) */
+function relayDoPost_(e) {
+  let result;
+  try {
+    const update = JSON.parse((e.postData && e.postData.contents) || '{}');
+    result = relayAsk(e.parameter.token, update);
+  } catch (err) {
+    console.error(`轉接站請求處理失敗: ${err.stack || err}`);
+    result = { ok: false, error: String(err.message || err) };
+  }
+  return ContentService.createTextOutput(JSON.stringify(result)).setMimeType(ContentService.MimeType.JSON);
+}
+
+/** 健康檢查：瀏覽器開啟 Web App 網址會看到這段文字 (版本字樣用來確認部署的是新版) */
+function doGet() {
+  return ContentService.createTextOutput('Telegram AI Bot (Google Apps Script) is running. relay-v2');
 }
 
 /**
@@ -1759,83 +1760,77 @@ function enrichResults(results, query, pages, maxChars) {
       console.log(`📄 解析網頁失敗 ${r.url.slice(0, 80)}: ${e}`);
     }
   });
-  console.log(`📄 已讀取 ${targets.filter((r) => r.content).length}/${targets.length} 個網頁內文`);
+  traceLog(`📄 已讀取 ${targets.filter((r) => r.content).length}/${targets.length} 個網頁內文`);
   return results;
 }
 
 // ==================== src/Relay.js ====================
 
 /**
- * 轉接站佇列：GAS 當公開的 webhook 收件站，電腦上的轉接站 (relay/relay.js) 來拿題目
+ * 轉接站介面：電腦上的轉接站 (relay/relay.js) 把 Telegram 訊息交給 GAS 回答
  *
- *   Telegram ──webhook──▶ GAS doPost ──排隊──▶ 佇列 ◀──每 2 秒輪詢── 轉接站 (你的電腦)
- *                                                                    │ 印出題目、搜尋、Gemini
- *   Telegram ◀───────────────────── 直接回覆 ─────────────────────────┘
+ *   📱 Telegram ◀──getUpdates 長輪詢── 💻 轉接站 (你的電腦，印出每一題)
+ *                                          │ POST ?action=ask&token=WEBHOOK_SECRET
+ *                                          ▼
+ *                                   ☁️ GAS doPost → 搜尋 + Gemini → 回覆 Telegram
+ *                                          │ 回傳 {replies, logs} 給轉接站印出
  *
- * 轉接站離線 (超過 RELAY_OFFLINE_SECONDS 沒來輪詢) 時，GAS 自己回答，bot 不會停擺
- * 轉接站在家用網路搜尋，避開搜尋引擎對 Google 機房 IP 的封鎖，也沒有 GAS 6 分鐘執行上限
+ * 為什麼不讓 Telegram 直接 webhook 到 GAS：GAS 網頁應用程式一律回 302 轉址，
+ * Telegram 把 302 當成失敗並逐次拉長重試間隔，訊息會越來越慢、最後卡住。
+ * 轉接站主動向 Telegram 拿訊息就沒有這個問題；GAS 獨立模式 (setWebhook) 仍保留作為備援。
  */
 
-const RELAY_QUEUE_KEY = 'relay_queue';
-const RELAY_LAST_SEEN_KEY = 'relay_last_seen';
-// 轉接站超過這麼久沒輪詢就視為離線
-const RELAY_OFFLINE_SECONDS = 30;
-const RELAY_MAX_QUEUE = 50;
-const RELAY_CACHE_SECONDS = 21600;
+let RELAY_CAPTURE_ = null;
 
-/** RELAY_MODE=auto 且轉接站最近有來輪詢 */
-function isRelayOnline() {
-  if (getConfig().RELAY_MODE !== 'auto') return false;
-  const last = Number(CacheService.getScriptCache().get(RELAY_LAST_SEEN_KEY) || 0);
-  return Date.now() - last < RELAY_OFFLINE_SECONDS * 1000;
-}
-
-function readRelayQueue_(cache) {
-  try {
-    return JSON.parse(cache.get(RELAY_QUEUE_KEY) || '[]');
-  } catch (e) {
-    return [];
-  }
-}
-
-/** 把 Telegram update 排入佇列給轉接站 */
-function enqueueRelayUpdate(update) {
-  const cache = CacheService.getScriptCache();
-  withScriptLock_(() => {
-    const queue = readRelayQueue_(cache);
-    queue.push(update);
-    cache.put(RELAY_QUEUE_KEY, JSON.stringify(queue.slice(-RELAY_MAX_QUEUE)), RELAY_CACHE_SECONDS);
-  });
-}
-
-/** 轉接站取走所有排隊中的 update，並記錄它還活著 */
-function takeRelayUpdates() {
-  const cache = CacheService.getScriptCache();
-  return withScriptLock_(() => {
-    cache.put(RELAY_LAST_SEEN_KEY, String(Date.now()), RELAY_CACHE_SECONDS);
-    const queue = readRelayQueue_(cache);
-    if (queue.length) cache.remove(RELAY_QUEUE_KEY);
-    return queue;
-  });
-}
-
-function jsonOutput_(data) {
-  return ContentService.createTextOutput(JSON.stringify(data)).setMimeType(ContentService.MimeType.JSON);
-}
-
-/** doGet?action=poll&token=WEBHOOK_SECRET → {ok, updates} */
-function relayPoll(token) {
+/** 處理轉接站送來的 update，回傳 {ok, replies, logs, seconds} */
+function relayAsk(token, update) {
   const secret = getConfig().WEBHOOK_SECRET;
   if (!secret || token !== secret) {
-    console.warn('轉接站 token 不符，拒絕輪詢');
-    return jsonOutput_({ ok: false, error: 'token 不符：轉接站 .env 的 WEBHOOK_SECRET 要與指令碼屬性相同' });
+    console.warn('轉接站 token 不符，拒絕');
+    return { ok: false, error: 'token 不符：轉接站 .env 的 WEBHOOK_SECRET 要與 GAS 指令碼屬性相同' };
   }
-  if (getConfig().RELAY_MODE !== 'auto') {
-    return jsonOutput_({ ok: false, error: 'RELAY_MODE=off：指令碼屬性改為 auto 才會把題目交給轉接站' });
+  if (!update || !update.message) return { ok: false, error: '缺少 Telegram update' };
+  if (isDuplicateUpdate(update.update_id)) return { ok: true, duplicate: true, replies: [], logs: [] };
+
+  const started = Date.now();
+  const capture = { replies: [], messages: [], logs: [] };
+  RELAY_CAPTURE_ = capture;
+  try {
+    handleUpdate(update);
+  } finally {
+    RELAY_CAPTURE_ = null;
   }
-  const updates = takeRelayUpdates();
-  if (updates.length) console.log(`📤 轉接站取走 ${updates.length} 題`);
-  return jsonOutput_({ ok: true, updates });
+  return {
+    ok: true,
+    // 最終回覆；指令 (/start 等) 沒有經過 sendFinalResponse，改用最後一則送出的訊息
+    replies: capture.replies.length ? capture.replies : capture.messages.slice(-1),
+    logs: capture.logs,
+    seconds: Math.round((Date.now() - started) / 100) / 10,
+  };
+}
+
+/** 記錄最終回覆 (純文字) 給轉接站印出 */
+function captureRelayReply_(html) {
+  if (RELAY_CAPTURE_) RELAY_CAPTURE_.replies.push(htmlToPlain(html));
+}
+
+/** 記錄送到 Telegram 的每則訊息 (含狀態訊息) */
+function captureRelayMessage_(html) {
+  if (RELAY_CAPTURE_) RELAY_CAPTURE_.messages.push(htmlToPlain(html));
+}
+
+/**
+ * 處理過程的重點紀錄 (搜尋判斷、搜尋引擎、讀網頁、換模型)：寫入日誌，並在轉接站請求時一併回傳印出
+ * GAS 不允許覆寫 console，所以這些步驟改呼叫 traceLog / traceWarn
+ */
+function traceLog(message) {
+  console.log(message);
+  if (RELAY_CAPTURE_) RELAY_CAPTURE_.logs.push(message);
+}
+
+function traceWarn(message) {
+  console.warn(message);
+  if (RELAY_CAPTURE_) RELAY_CAPTURE_.logs.push(message);
 }
 
 // ==================== src/Search.js ====================
@@ -1865,7 +1860,7 @@ function resolveEngineName_(engineName) {
 
 function searchWith_(name, query, maxResults) {
   const eng = getSearchEngines()[name];
-  console.log(`🔍 使用搜尋引擎: ${eng.name}`);
+  traceLog(`🔍 使用搜尋引擎: ${eng.name}`);
   const results = eng.search(query, maxResults);
   // 標記來源引擎，formatResults 才能用對應格式
   results.forEach((r) => { r.source_engine = name; });
@@ -1884,7 +1879,7 @@ function search(query, maxResults, engine) {
 
   const fallback = cfg.SEARCH_FALLBACK_ENGINE;
   if (!results.length && fallback && fallback !== name && getSearchEngines()[fallback]) {
-    console.warn(`↪️ ${name} 無結果，改用備援搜尋引擎: ${fallback}`);
+    traceWarn(`↪️ ${name} 無結果，改用備援搜尋引擎: ${fallback}`);
     results = searchWith_(fallback, query, max);
   }
   return results;
@@ -1986,7 +1981,7 @@ function searchDuckDuckGo(query, maxResults) {
     return [];
   }
 
-  console.log(`🔍 [DuckDuckGo] 搜尋關鍵字: "${keywords}"`);
+  traceLog(`🔍 [DuckDuckGo] 搜尋關鍵字: "${keywords}"`);
   try {
     const resp = UrlFetchApp.fetch(DDG_HTML_URL, {
       method: 'post',
@@ -2000,7 +1995,7 @@ function searchDuckDuckGo(query, maxResults) {
 
     if (isChallengePage(code, text)) {
       markDdgBlocked();
-      console.warn(
+      traceWarn(
         `🚫 [DuckDuckGo] 被機器人驗證擋下 (HTTP ${code})，${DDG_BLOCK_COOLDOWN_SECONDS / 60} 分鐘內暫停使用`,
       );
       return [];
@@ -2011,7 +2006,7 @@ function searchDuckDuckGo(query, maxResults) {
     }
 
     const results = parseDuckDuckGoHtml(text, maxResults);
-    console.log(`✅ [DuckDuckGo] 取得 ${results.length} 筆結果`);
+    traceLog(`✅ [DuckDuckGo] 取得 ${results.length} 筆結果`);
     return results;
   } catch (e) {
     console.error(`❌ [DuckDuckGo] 搜尋失敗: ${e}`);
@@ -2122,7 +2117,7 @@ function parseNewsRss(xmlText, maxResults, keyword) {
 /** 使用 Google News RSS 搜尋 → [{title, url, pubDate, description}] */
 function searchGoogleNews(query, maxResults) {
   const keyword = extractSearchKeywords(query) || query;
-  console.log(`🔍 [GoogleNews] 搜尋關鍵字: "${keyword}"`);
+  traceLog(`🔍 [GoogleNews] 搜尋關鍵字: "${keyword}"`);
   const url = `${GOOGLE_NEWS_RSS_URL}?q=${encodeURIComponent(keyword)}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant`;
   try {
     const resp = UrlFetchApp.fetch(url, {
@@ -2258,7 +2253,7 @@ const MULTI_BACKENDS = [
 /** 多引擎搜尋：依序嘗試，回傳第一個有結果的引擎 → [{title, url, snippet}] */
 function searchMulti(query, maxResults) {
   const keywords = extractSearchKeywords(query) || query;
-  console.log(`🔍 [multi] 搜尋關鍵字: "${keywords}"`);
+  traceLog(`🔍 [multi] 搜尋關鍵字: "${keywords}"`);
   for (const backend of MULTI_BACKENDS) {
     try {
       const req = backend.request(keywords);
@@ -2271,17 +2266,17 @@ function searchMulti(query, maxResults) {
       });
       const code = resp.getResponseCode();
       if (code !== 200) {
-        console.warn(`⚠️ [multi] ${backend.name} HTTP ${code}，換下一個引擎`);
+        traceWarn(`⚠️ [multi] ${backend.name} HTTP ${code}，換下一個引擎`);
         continue;
       }
       const results = backend.parse(resp.getContentText(), maxResults);
       if (results.length) {
-        console.log(`✅ [multi] ${backend.name} 取得 ${results.length} 筆結果`);
+        traceLog(`✅ [multi] ${backend.name} 取得 ${results.length} 筆結果`);
         return results;
       }
-      console.warn(`⚠️ [multi] ${backend.name} 無結果，換下一個引擎`);
+      traceWarn(`⚠️ [multi] ${backend.name} 無結果，換下一個引擎`);
     } catch (e) {
-      console.warn(`⚠️ [multi] ${backend.name} 失敗: ${e}`);
+      traceWarn(`⚠️ [multi] ${backend.name} 失敗: ${e}`);
     }
   }
   console.warn('⚠️ [multi] 所有引擎皆無結果');
@@ -2675,8 +2670,14 @@ function createTelegramContext(update) {
     firstName: user.first_name || '',
     userName: user.first_name || user.username || '匿名',
     statusMessageId: null,
-    reply: (text, parseMode) => tgSendMessage(chatId, text, parseMode),
-    edit: (messageId, text, parseMode) => tgEditMessageText(chatId, messageId, text, parseMode),
+    reply: (text, parseMode) => {
+      captureRelayMessage_(text);
+      return tgSendMessage(chatId, text, parseMode);
+    },
+    edit: (messageId, text, parseMode) => {
+      captureRelayMessage_(text);
+      return tgEditMessageText(chatId, messageId, text, parseMode);
+    },
     typing: () => tgSendChatAction(chatId, 'typing'),
   };
 }

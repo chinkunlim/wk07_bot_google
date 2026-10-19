@@ -99,7 +99,7 @@ const MULTI_BACKENDS = [
 /** 多引擎搜尋：依序嘗試，回傳第一個有結果的引擎 → [{title, url, snippet}] */
 function searchMulti(query, maxResults) {
   const keywords = extractSearchKeywords(query) || query;
-  console.log(`🔍 [multi] 搜尋關鍵字: "${keywords}"`);
+  traceLog(`🔍 [multi] 搜尋關鍵字: "${keywords}"`);
   for (const backend of MULTI_BACKENDS) {
     try {
       const req = backend.request(keywords);
@@ -112,17 +112,17 @@ function searchMulti(query, maxResults) {
       });
       const code = resp.getResponseCode();
       if (code !== 200) {
-        console.warn(`⚠️ [multi] ${backend.name} HTTP ${code}，換下一個引擎`);
+        traceWarn(`⚠️ [multi] ${backend.name} HTTP ${code}，換下一個引擎`);
         continue;
       }
       const results = backend.parse(resp.getContentText(), maxResults);
       if (results.length) {
-        console.log(`✅ [multi] ${backend.name} 取得 ${results.length} 筆結果`);
+        traceLog(`✅ [multi] ${backend.name} 取得 ${results.length} 筆結果`);
         return results;
       }
-      console.warn(`⚠️ [multi] ${backend.name} 無結果，換下一個引擎`);
+      traceWarn(`⚠️ [multi] ${backend.name} 無結果，換下一個引擎`);
     } catch (e) {
-      console.warn(`⚠️ [multi] ${backend.name} 失敗: ${e}`);
+      traceWarn(`⚠️ [multi] ${backend.name} 失敗: ${e}`);
     }
   }
   console.warn('⚠️ [multi] 所有引擎皆無結果');

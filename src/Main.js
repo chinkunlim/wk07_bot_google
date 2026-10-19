@@ -13,8 +13,16 @@ const BOT_COMMANDS = [
   { command: 'help', description: '使用說明' },
 ];
 
-/** Telegram webhook 入口；一律回 200，錯誤只寫日誌，避免 Telegram 重送 */
+/**
+ * POST 入口
+ * - ?action=ask&token=...：電腦上的轉接站送來的訊息 (主要模式，見 Relay.js)，回傳 JSON
+ * - ?secret=...：Telegram webhook (GAS 獨立模式，setWebhook 設定)
+ * 錯誤只寫日誌，避免 Telegram 重送
+ */
 function doPost(e) {
+  const params = (e && e.parameter) || {};
+  if (params.action === 'ask') return relayDoPost_(e);
+
   let update = null;
   try {
     const cfg = getConfig();
@@ -28,12 +36,6 @@ function doPost(e) {
       console.log(`重複的 update ${update.update_id}，略過`);
       return ContentService.createTextOutput('ok');
     }
-    // 轉接站在線就交給它處理；離線時 GAS 自己回答
-    if (update.message && typeof update.message.text === 'string' && isRelayOnline()) {
-      enqueueRelayUpdate(update);
-      console.log(`📮 update ${update.update_id} 已排入轉接站佇列`);
-      return ContentService.createTextOutput('ok');
-    }
     handleUpdate(update);
   } catch (err) {
     // 全域錯誤處理：記錄堆疊，盡量回覆使用者
@@ -44,16 +46,22 @@ function doPost(e) {
   return ContentService.createTextOutput('ok');
 }
 
-/**
- * GET 入口
- * - ?action=poll&token=...：轉接站輪詢題目 (見 Relay.js)
- * - 其他：健康檢查，瀏覽器開啟 Web App 網址會看到這段文字
- */
-function doGet(e) {
-  const params = (e && e.parameter) || {};
-  if (params.action === 'poll') return relayPoll(params.token);
-  const relay = isRelayOnline() ? '轉接站在線' : '轉接站離線 (由 GAS 直接回答)';
-  return ContentService.createTextOutput(`Telegram AI Bot (Google Apps Script) is running. ${relay}`);
+/** 轉接站的請求：處理訊息並回傳 JSON (回覆內容與過程紀錄，讓轉接站印出) */
+function relayDoPost_(e) {
+  let result;
+  try {
+    const update = JSON.parse((e.postData && e.postData.contents) || '{}');
+    result = relayAsk(e.parameter.token, update);
+  } catch (err) {
+    console.error(`轉接站請求處理失敗: ${err.stack || err}`);
+    result = { ok: false, error: String(err.message || err) };
+  }
+  return ContentService.createTextOutput(JSON.stringify(result)).setMimeType(ContentService.MimeType.JSON);
+}
+
+/** 健康檢查：瀏覽器開啟 Web App 網址會看到這段文字 (版本字樣用來確認部署的是新版) */
+function doGet() {
+  return ContentService.createTextOutput('Telegram AI Bot (Google Apps Script) is running. relay-v2');
 }
 
 /**

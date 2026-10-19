@@ -85,7 +85,7 @@ function parseNewsRss(xmlText, maxResults, keyword) {
 /** 使用 Google News RSS 搜尋 → [{title, url, pubDate, description}] */
 function searchGoogleNews(query, maxResults) {
   const keyword = extractSearchKeywords(query) || query;
-  console.log(`🔍 [GoogleNews] 搜尋關鍵字: "${keyword}"`);
+  traceLog(`🔍 [GoogleNews] 搜尋關鍵字: "${keyword}"`);
   const url = `${GOOGLE_NEWS_RSS_URL}?q=${encodeURIComponent(keyword)}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant`;
   try {
     const resp = UrlFetchApp.fetch(url, {

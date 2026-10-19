@@ -75,8 +75,14 @@ function createTelegramContext(update) {
     firstName: user.first_name || '',
     userName: user.first_name || user.username || '匿名',
     statusMessageId: null,
-    reply: (text, parseMode) => tgSendMessage(chatId, text, parseMode),
-    edit: (messageId, text, parseMode) => tgEditMessageText(chatId, messageId, text, parseMode),
+    reply: (text, parseMode) => {
+      captureRelayMessage_(text);
+      return tgSendMessage(chatId, text, parseMode);
+    },
+    edit: (messageId, text, parseMode) => {
+      captureRelayMessage_(text);
+      return tgEditMessageText(chatId, messageId, text, parseMode);
+    },
     typing: () => tgSendChatAction(chatId, 'typing'),
   };
 }

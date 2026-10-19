@@ -84,7 +84,7 @@ function searchDuckDuckGo(query, maxResults) {
     return [];
   }
 
-  console.log(`🔍 [DuckDuckGo] 搜尋關鍵字: "${keywords}"`);
+  traceLog(`🔍 [DuckDuckGo] 搜尋關鍵字: "${keywords}"`);
   try {
     const resp = UrlFetchApp.fetch(DDG_HTML_URL, {
       method: 'post',
@@ -98,7 +98,7 @@ function searchDuckDuckGo(query, maxResults) {
 
     if (isChallengePage(code, text)) {
       markDdgBlocked();
-      console.warn(
+      traceWarn(
         `🚫 [DuckDuckGo] 被機器人驗證擋下 (HTTP ${code})，${DDG_BLOCK_COOLDOWN_SECONDS / 60} 分鐘內暫停使用`,
       );
       return [];
@@ -109,7 +109,7 @@ function searchDuckDuckGo(query, maxResults) {
     }
 
     const results = parseDuckDuckGoHtml(text, maxResults);
-    console.log(`✅ [DuckDuckGo] 取得 ${results.length} 筆結果`);
+    traceLog(`✅ [DuckDuckGo] 取得 ${results.length} 筆結果`);
     return results;
   } catch (e) {
     console.error(`❌ [DuckDuckGo] 搜尋失敗: ${e}`);

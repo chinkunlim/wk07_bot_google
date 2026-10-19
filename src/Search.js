@@ -23,7 +23,7 @@ function resolveEngineName_(engineName) {
 
 function searchWith_(name, query, maxResults) {
   const eng = getSearchEngines()[name];
-  console.log(`🔍 使用搜尋引擎: ${eng.name}`);
+  traceLog(`🔍 使用搜尋引擎: ${eng.name}`);
   const results = eng.search(query, maxResults);
   // 標記來源引擎，formatResults 才能用對應格式
   results.forEach((r) => { r.source_engine = name; });
@@ -42,7 +42,7 @@ function search(query, maxResults, engine) {
 
   const fallback = cfg.SEARCH_FALLBACK_ENGINE;
   if (!results.length && fallback && fallback !== name && getSearchEngines()[fallback]) {
-    console.warn(`↪️ ${name} 無結果，改用備援搜尋引擎: ${fallback}`);
+    traceWarn(`↪️ ${name} 無結果，改用備援搜尋引擎: ${fallback}`);
     results = searchWith_(fallback, query, max);
   }
   return results;

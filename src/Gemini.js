@@ -237,7 +237,7 @@ function geminiExhaustedSeconds(err) {
 function markGeminiModelExhausted_(model, err) {
   const seconds = geminiExhaustedSeconds(err);
   CacheService.getScriptCache().put(GEMINI_EXHAUSTED_CACHE_PREFIX + model, '1', seconds);
-  console.warn(`⏸️ ${model} 暫停使用 ${seconds} 秒 (HTTP ${err.status})`);
+  traceWarn(`⏸️ ${model} 暫停使用 ${seconds} 秒 (HTTP ${err.status})`);
 }
 
 /** 依序排列要嘗試的模型：最近額度用完的排到後面 (全部用完時仍會照順序嘗試) */
@@ -262,7 +262,7 @@ function generateWithFallback_(models, payload) {
       const switchable = e instanceof GeminiError && GEMINI_FALLBACK_STATUSES.includes(e.status);
       if (switchable) markGeminiModelExhausted_(model, e);
       if (!switchable || isLast) throw e;
-      console.warn(`↪️ 改用備援模型 ${models[i + 1]}`);
+      traceWarn(`↪️ 改用備援模型 ${models[i + 1]}`);
     }
   }
   throw new GeminiError('沒有可用的 Gemini 模型', 404);

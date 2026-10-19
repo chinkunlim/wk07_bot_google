@@ -44,13 +44,17 @@ function curlFetch(url, options = {}) {
   const headerFile = path.join(dir, 'h');
   const bodyFile = path.join(dir, 'b');
   const method = String(options.method || 'get').toUpperCase();
-  const args = ['-sS', '--max-time', '60', '-X', method, '-D', headerFile, '-o', bodyFile, '-w', '%{http_code}'];
+  const args = ['-sS', '--max-time', String(options.timeoutSeconds || 60), '-D', headerFile, '-o', bodyFile, '-w', '%{http_code}'];
+  // 有 payload 時由 curl 自動用 POST；不加 -X POST，302 轉址後才會像瀏覽器一樣改用 GET
+  // (GAS 網頁應用程式的 doPost 回應要用 GET 到轉址網址取得)
+  const hasPayload = options.payload !== undefined && options.payload !== null;
+  if (!(method === 'POST' && hasPayload) && method !== 'GET') args.push('-X', method);
   if (options.followRedirects !== false) args.push('-L');
   const headers = Object.assign({}, options.headers || {});
   if (options.contentType) headers['Content-Type'] = options.contentType;
   for (const [k, v] of Object.entries(headers)) args.push('-H', `${k}: ${v}`);
   let input;
-  if (options.payload !== undefined && options.payload !== null) {
+  if (hasPayload) {
     if (typeof options.payload === 'object') {
       for (const [k, v] of Object.entries(options.payload)) args.push('--data-urlencode', `${k}=${v}`);
     } else {
@@ -189,43 +193,16 @@ class FakeSpreadsheet {
 
 // ===== 載入 GAS 程式碼 =====
 
-/** 從 JSON 還原記憶體試算表 (轉接站重開後保留對話記憶與配額) */
-function restoreSpreadsheets(data) {
-  const out = {};
-  for (const [id, ss] of Object.entries(data || {})) {
-    out[id] = new FakeSpreadsheet(ss.name, id);
-    for (const [name, rows] of Object.entries(ss.sheets || {})) {
-      out[id].insertSheet(name).rows = rows;
-    }
-  }
-  return out;
-}
-
-function dumpSpreadsheets(spreadsheets) {
-  const data = {};
-  for (const [id, ss] of Object.entries(spreadsheets)) {
-    data[id] = { name: ss.name, sheets: {} };
-    for (const [name, sheet] of Object.entries(ss.sheets)) data[id].sheets[name] = sheet.rows;
-  }
-  return data;
-}
-
 /**
  * 建立 GAS 模擬環境並載入 src/*.js
  * options.props：指令碼屬性；options.fetch：UrlFetchApp.fetch 的實作 (預設不連網)
- * options.dataFile：記憶體試算表存檔位置 (選用，呼叫 save() 寫入)
  * options.files：要載入的檔案 (預設 src/*.js)
- * 回傳 {context, get(name), set(name, value), props, spreadsheets, logs, save()}
+ * 回傳 {context, get(name), set(name, value), props, spreadsheets, logs}
  */
 function loadGas(options = {}) {
   const props = Object.assign({}, options.props || {});
   const cache = new Map();
-  let spreadsheets = {};
-  if (options.dataFile && fs.existsSync(options.dataFile)) {
-    const saved = JSON.parse(fs.readFileSync(options.dataFile, 'utf8'));
-    spreadsheets = restoreSpreadsheets(saved.spreadsheets);
-    if (saved.spreadsheetId && !props.SPREADSHEET_ID) props.SPREADSHEET_ID = saved.spreadsheetId;
-  }
+  const spreadsheets = {};
   const logs = [];
   let fetchImpl = options.fetch || offlineFetch;
 
@@ -333,13 +310,6 @@ function loadGas(options = {}) {
       vm.runInContext('resetConfigCache_()', context);
     },
     setFetch: (fn) => { fetchImpl = fn; },
-    /** 把記憶體試算表寫入 options.dataFile */
-    save: () => {
-      if (!options.dataFile) return;
-      fs.mkdirSync(path.dirname(options.dataFile), { recursive: true });
-      const data = { spreadsheetId: props.SPREADSHEET_ID || '', spreadsheets: dumpSpreadsheets(spreadsheets) };
-      fs.writeFileSync(options.dataFile, JSON.stringify(data));
-    },
   };
 }
 

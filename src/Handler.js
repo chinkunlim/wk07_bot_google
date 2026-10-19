@@ -20,6 +20,7 @@ function sendStatus(ctx, text) {
 
 /** 發送最終回覆 (替換狀態訊息，過長自動分段) */
 function sendFinalResponse(ctx, text) {
+  captureRelayReply_(text);
   const statusId = ctx.statusMessageId;
   ctx.statusMessageId = null;
   const chunks = splitMessage(text);
@@ -255,7 +256,7 @@ function processQuery(ctx, userQuery, quota) {
 function runSearchTool(args) {
   const query = String((args && args.query) || '').trim();
   if (!query) return { content: '錯誤：search_web 需要 query 參數', record: null };
-  console.log(`🔧 模型呼叫搜尋: "${query}"`);
+  traceLog(`🔧 模型呼叫搜尋: "${query}"`);
   const cfg = getConfig();
   let results;
   try {
@@ -334,7 +335,7 @@ function routerSearch(ctx, history, userQuery, contents, toolResults, usage, tod
   const recent = historyToContents(history.slice(-4)).concat([{ role: 'user', parts: [{ text: userQuery }] }]);
   const decision = decideSearch(recent, today);
   addUsage(usage, decision.usage);
-  console.log(`🧭 搜尋判斷: ${JSON.stringify({ need_search: decision.need_search, query: decision.query })}`);
+  traceLog(`🧭 搜尋判斷: ${JSON.stringify({ need_search: decision.need_search, query: decision.query })}`);
   if (!decision.need_search) return;
 
   const query = decision.query || userQuery;

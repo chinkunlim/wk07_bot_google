@@ -171,6 +171,6 @@ function enrichResults(results, query, pages, maxChars) {
       console.log(`📄 解析網頁失敗 ${r.url.slice(0, 80)}: ${e}`);
     }
   });
-  console.log(`📄 已讀取 ${targets.filter((r) => r.content).length}/${targets.length} 個網頁內文`);
+  traceLog(`📄 已讀取 ${targets.filter((r) => r.content).length}/${targets.length} 個網頁內文`);
   return results;
 }

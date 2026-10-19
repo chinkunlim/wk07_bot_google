@@ -1,121 +1,140 @@
-// 轉接站佇列 (doPost 排隊、doGet 輪詢) 與單一檔案 Code.gs
+// 轉接站：GAS 的 ?action=ask 介面、轉接站程式 (relay/relay.js)、單一檔案 Code.gs
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const { loadGas, makeResponse } = require('../dev/gasShim');
 const { buildCode, OUT_FILE } = require('../dev/build');
+const { createRelay, validateEnv } = require('../relay/relay');
 
 const USER = 111;
 const TOKEN = '123456:' + 'A'.repeat(35);
 const SECRET = 's3cret';
+const EXEC_URL = 'https://script.google.com/macros/s/AKfyTEST/exec';
 
-function setup(props, options) {
+function makeUpdate(id, text) {
+  return { update_id: id, message: { message_id: 1, text, chat: { id: USER }, from: { id: USER, first_name: '小明' } } };
+}
+
+/** GAS 環境 + 假 Telegram / Gemini */
+function setupGas(props, options) {
   const g = loadGas(Object.assign({
     props: Object.assign({
       TELEGRAM_BOT_TOKEN: TOKEN, ALLOWED_USER_IDS: String(USER), GEMINI_API_KEY: 'k', WEBHOOK_SECRET: SECRET,
+      SEARCH_FETCH_PAGES: '0',
     }, props || {}),
   }, options || {}));
   const telegram = [];
+  const geminiReplies = [];
   g.setFetch((url, opts) => {
     if (url.startsWith('https://api.telegram.org/')) {
       telegram.push({ method: url.split('/').pop(), payload: JSON.parse(opts.payload) });
       return makeResponse({ body: JSON.stringify({ ok: true, result: { message_id: 1 } }) });
     }
-    throw new Error(`unexpected fetch ${url}`);
+    if (url.includes('generativelanguage.googleapis.com')) {
+      return makeResponse({ body: JSON.stringify({ candidates: [{ content: { role: 'model', parts: [{ text: geminiReplies.shift() }] } }] }) });
+    }
+    return makeResponse({ code: 404, body: '' });
   });
-  let updateId = 1;
-  const post = (text) => g.get('doPost')({
-    parameter: { secret: SECRET },
-    postData: {
-      contents: JSON.stringify({
-        update_id: updateId++,
-        message: { message_id: 1, text, chat: { id: USER }, from: { id: USER, first_name: '小明' } },
-      }),
-    },
-  });
-  const poll = (token) => JSON.parse(g.get('doGet')({ parameter: { action: 'poll', token } }).getContent());
-  return { g, telegram, post, poll };
+  const ask = (token, update) => {
+    const out = g.get('doPost')({
+      parameter: { action: 'ask', token },
+      postData: { contents: JSON.stringify(update) },
+    });
+    assert.equal(out.getMimeType(), 'application/json');
+    return JSON.parse(out.getContent());
+  };
+  return { g, telegram, geminiReplies, ask };
 }
 
-test('轉接站離線：GAS 直接回答', () => {
-  const t = setup();
-  t.post('/help');
-  assert.equal(t.telegram.length, 1);
-  assert.ok(t.telegram[0].payload.text.includes('使用說明'));
-  assert.ok(t.g.get('doGet')({ parameter: {} }).getContent().includes('轉接站離線'));
-});
-
-test('轉接站輪詢後在線：題目排隊、GAS 不回答；下次輪詢取走並清空', () => {
-  const t = setup();
-  assert.deepEqual(t.poll(SECRET), { ok: true, updates: [] });
-  assert.ok(t.g.get('doGet')({ parameter: {} }).getContent().includes('轉接站在線'));
-
-  t.post('查 台北天氣');
-  t.post('/help');
-  assert.equal(t.telegram.length, 0);
-
-  const res = t.poll(SECRET);
+test('GAS ?action=ask：處理訊息、直接回覆 Telegram、回傳回覆與過程紀錄', () => {
+  const t = setupGas();
+  t.geminiReplies.push('{"need_search": false, "query": ""}', '**你好**！');
+  const res = t.ask(SECRET, makeUpdate(1, '你好'));
   assert.equal(res.ok, true);
-  assert.deepEqual(res.updates.map((u) => u.message.text), ['查 台北天氣', '/help']);
-  assert.deepEqual(t.poll(SECRET).updates, []);
+  assert.equal(res.replies.length, 1);
+  assert.ok(res.replies[0].startsWith('你好！'));
+  assert.ok(res.logs.some((l) => l.includes('🧭 搜尋判斷')));
+  assert.ok(t.telegram.some((c) => c.method === 'editMessageText' && c.payload.text.startsWith('<b>你好</b>')));
 });
 
-test('輪詢 token 不符被拒，也不會把轉接站標記為在線', () => {
-  const t = setup();
-  const res = t.poll('wrong');
-  assert.equal(res.ok, false);
-  assert.match(res.error, /token 不符/);
-  t.post('/help');
-  assert.equal(t.telegram.length, 1);
+test('GAS ?action=ask：指令的回覆也會回傳；token 不符被拒；重複的 update 略過', () => {
+  const t = setupGas();
+  const res = t.ask(SECRET, makeUpdate(2, '/help'));
+  assert.ok(res.replies[0].includes('使用說明'));
+
+  const bad = t.ask('wrong', makeUpdate(3, '/help'));
+  assert.equal(bad.ok, false);
+  assert.match(bad.error, /token 不符/);
+
+  const dup = t.ask(SECRET, makeUpdate(2, '/help'));
+  assert.equal(dup.duplicate, true);
+  assert.equal(t.telegram.filter((c) => c.method === 'sendMessage').length, 1);
 });
 
-test('RELAY_MODE=off：一律由 GAS 回答，輪詢回傳說明', () => {
-  const t = setup({ RELAY_MODE: 'off' });
-  const res = t.poll(SECRET);
-  assert.equal(res.ok, false);
-  assert.match(res.error, /RELAY_MODE=off/);
-  t.post('/help');
-  assert.equal(t.telegram.length, 1);
+test('traceLog：轉接站請求以外只寫日誌，不累積', () => {
+  const t = setupGas();
+  t.g.get('traceLog')('🔍 測試');
+  assert.ok(t.g.logs.some((l) => l.text === '🔍 測試'));
+  t.ask(SECRET, makeUpdate(4, '/help'));
+  t.g.get('traceLog')('之後');
+  assert.equal(t.g.get('RELAY_CAPTURE_'), null);
 });
 
-test('轉接站超過 30 秒沒輪詢 → 視為離線，GAS 接手', () => {
-  const t = setup();
-  t.poll(SECRET);
-  const cache = t.g.context.CacheService.getScriptCache();
-  cache.put('relay_last_seen', String(Date.now() - 31000));
-  t.post('/help');
-  assert.equal(t.telegram.length, 1);
+test('Telegram webhook (GAS 獨立模式) 仍可直接處理', () => {
+  const t = setupGas();
+  t.g.get('doPost')({ parameter: { secret: SECRET }, postData: { contents: JSON.stringify(makeUpdate(5, '/help')) } });
+  assert.equal(t.telegram.filter((c) => c.method === 'sendMessage').length, 1);
+  assert.match(t.g.get('doGet')().getContent(), /relay-v2/);
 });
 
-test('轉接站端：拿到的 update 交給同一套 handleUpdate 處理並回覆 Telegram', () => {
-  const gas = setup();
-  gas.poll(SECRET);
-  gas.post('/start');
-  const [update] = gas.poll(SECRET).updates;
-
-  const relay = setup();
-  relay.g.get('handleUpdate')(update);
-  assert.equal(relay.telegram.length, 1);
-  assert.ok(relay.telegram[0].payload.text.includes('歡迎使用'));
+test('轉接站：把 update 交給 GAS、印出題目與回覆 (端對端，假網路)', () => {
+  const gas = setupGas();
+  gas.geminiReplies.push('{"need_search": false, "query": ""}', '花蓮有七星潭。');
+  const lines = [];
+  const http = (url, opts) => {
+    if (url.startsWith(EXEC_URL)) {
+      const token = new URL(url).searchParams.get('token');
+      const out = gas.g.get('doPost')({
+        parameter: { action: 'ask', token },
+        postData: { contents: opts.payload },
+      });
+      return makeResponse({ body: out.getContent() });
+    }
+    return makeResponse({ body: JSON.stringify({ ok: true, result: { message_id: 9 } }) });
+  };
+  const relay = createRelay(
+    { TELEGRAM_BOT_TOKEN: TOKEN, WEBHOOK_URL: EXEC_URL, WEBHOOK_SECRET: SECRET },
+    { http, log: (l) => lines.push(l) },
+  );
+  relay.handle(makeUpdate(6, '查 花蓮景點'), 1);
+  const out = lines.join('\n');
+  assert.match(out, /📩 第 1 題｜小明 \(111\)：查 花蓮景點/);
+  assert.match(out, /🧭 搜尋判斷/);
+  assert.match(out, /🤖 回覆：\n {4}花蓮有七星潭。/);
+  assert.match(out, /✅ 完成/);
 });
 
-test('RELAY_MODE 驗證', () => {
-  const g = loadGas();
-  const errors = g.get('validateConfig')(g.get('buildConfig')({ GEMINI_API_KEY: 'k', RELAY_MODE: 'yes' }), false);
-  assert.ok(errors.some((e) => e.includes('RELAY_MODE=yes')));
+test('轉接站：GAS 失敗 (例如收到登入頁) 時印出原因並通知使用者', () => {
+  const sent = [];
+  const lines = [];
+  const http = (url, opts) => {
+    if (url.startsWith(EXEC_URL)) return makeResponse({ body: '<html>login</html>' });
+    sent.push(JSON.parse(opts.payload));
+    return makeResponse({ body: JSON.stringify({ ok: true, result: {} }) });
+  };
+  const relay = createRelay(
+    { TELEGRAM_BOT_TOKEN: TOKEN, WEBHOOK_URL: EXEC_URL, WEBHOOK_SECRET: SECRET },
+    { http, log: (l) => lines.push(l) },
+  );
+  relay.handle(makeUpdate(7, '你好'), 1);
+  assert.match(lines.join('\n'), /存取權為「所有人」/);
+  assert.equal(sent[0].chat_id, USER);
 });
 
-test('轉接站資料存檔：重開後保留對話記憶', () => {
-  const dataFile = require('node:path').join(require('node:os').tmpdir(), `relay-test-${process.pid}.json`);
-  try {
-    const first = setup({ MAX_HISTORY_TURNS: '2' }, { dataFile });
-    first.g.get('saveConversationTurn')(USER, '問', '答');
-    first.g.save();
-    const second = setup({ MAX_HISTORY_TURNS: '2' }, { dataFile });
-    assert.equal(second.g.get('getConversationHistory')(USER)[1].content, '答');
-  } finally {
-    fs.rmSync(dataFile, { force: true });
-  }
+test('轉接站設定驗證', () => {
+  assert.deepEqual(validateEnv({ TELEGRAM_BOT_TOKEN: TOKEN, WEBHOOK_URL: EXEC_URL, WEBHOOK_SECRET: SECRET }), []);
+  const errors = validateEnv({ WEBHOOK_URL: 'https://script.google.com/macros/s/x/dev' }).join('\n');
+  for (const key of ['TELEGRAM_BOT_TOKEN', 'WEBHOOK_URL', 'WEBHOOK_SECRET']) assert.ok(errors.includes(key), key);
 });
 
 test('Code.gs 與 src/ 同步 (修改 src/ 後請執行 npm run build)', () => {
@@ -123,8 +142,8 @@ test('Code.gs 與 src/ 同步 (修改 src/ 後請執行 npm run build)', () => {
 });
 
 test('單獨載入 Code.gs 即可運作 (貼進 GAS 編輯器的情境)', () => {
-  const t = setup({}, { files: [OUT_FILE] });
-  t.post('/help');
-  assert.equal(t.telegram.length, 1);
+  const t = setupGas({}, { files: [OUT_FILE] });
+  const res = t.ask(SECRET, makeUpdate(8, '/help'));
+  assert.ok(res.replies[0].includes('使用說明'));
   assert.equal(typeof t.g.get('setWebhook'), 'function');
 });
