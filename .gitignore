@@ -1,0 +1,13 @@
+# 本機依賴 (只裝在 gas/，不裝全域)
+node_modules/
+
+# clasp：專案 ID 與登入憑證 (npm run login 寫在這裡，不寫到 ~/.clasprc.json)
+.clasp.json
+.clasprc.json
+
+# 本機模擬用的設定與資料
+.env
+.sim-data/
+
+# macOS
+.DS_Store

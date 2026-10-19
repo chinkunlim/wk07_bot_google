@@ -1,0 +1,24 @@
+{
+  "name": "telegram-ai-bot-gas",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Telegram AI Bot - Google Apps Script 版 (Gemini API + 自建網路搜尋)",
+  "scripts": {
+    "test": "node --test \"test/*.test.js\"",
+    "simulate": "node dev/simulate.js",
+    "login": "clasp -A .clasprc.json login",
+    "logout": "clasp -A .clasprc.json logout",
+    "create": "clasp -A .clasprc.json create-script --type standalone --title \"Telegram AI Bot\" --rootDir .",
+    "status": "clasp -A .clasprc.json show-file-status",
+    "push": "clasp -A .clasprc.json push --force",
+    "open": "clasp -A .clasprc.json open-script",
+    "deploy": "clasp -A .clasprc.json create-deployment --description \"Telegram webhook\"",
+    "deployments": "clasp -A .clasprc.json list-deployments"
+  },
+  "devDependencies": {
+    "@google/clasp": "^3.4.1"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

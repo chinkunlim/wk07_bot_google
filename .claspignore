@@ -1,0 +1,4 @@
+# 只推送 GAS 程式碼與 manifest，其餘 (測試、本機模擬、node_modules) 不上傳
+**/**
+!appsscript.json
+!src/**
