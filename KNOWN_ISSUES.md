@@ -34,7 +34,7 @@
 
 ## ISSUE-002 push 之後網址跑的還是舊程式
 
-- **現象**：`npm run push` 成功，但 bot 行為沒變；開 `/exec` 網址看到的版本字樣 (目前 `v2.2`) 不是最新的。
+- **現象**：`npm run push` 成功，但 bot 行為沒變；開 `/exec` 網址看到的版本字樣 (目前 `v2.3`) 不是最新的。
 - **原因**：部署作業綁定的是「建立版本當時」的程式快照，push 只更新 HEAD。在「管理部署作業」打開再按部署而沒選「新版本」，版本不會變；「新增部署作業」則會產生另一個網址。
 - **規避**：`npm run redeploy -- <deploymentId>` (deploymentId 用 `npm run deployments` 查，對照 `WEBHOOK_URL` 中 `/s/` 後那段)，或編輯器「管理部署作業 → 鉛筆 → 版本：新版本 → 部署」。
 

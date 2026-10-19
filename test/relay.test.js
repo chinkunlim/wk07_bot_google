@@ -84,7 +84,16 @@ test('Telegram webhook (GAS 獨立模式) 仍可直接處理', () => {
   const t = setupGas();
   t.g.get('doPost')({ parameter: { secret: SECRET }, postData: { contents: JSON.stringify(makeUpdate(5, '/help')) } });
   assert.equal(t.telegram.filter((c) => c.method === 'sendMessage').length, 1);
-  assert.match(t.g.get('doGet')().getContent(), /v2\.2/);
+  assert.match(t.g.get('doGet')().getContent(), /v2\.3/);
+});
+
+test('日誌標示請求來源 (webhook / 轉接站)', () => {
+  const t = setupGas();
+  t.g.get('doPost')({ parameter: { secret: SECRET }, postData: { contents: JSON.stringify(makeUpdate(30, '/help')) } });
+  t.ask(SECRET, makeUpdate(31, '/help'));
+  const texts = t.g.logs.map((l) => l.text);
+  assert.ok(texts.includes('📨 來源：Telegram webhook (GAS 獨立模式)，update 30'));
+  assert.ok(texts.includes('🛰️ 來源：轉接站，update 31'));
 });
 
 test('Telegram webhook 一律回 HtmlService (HTTP 200)，不用會被 302 轉址的 ContentService', () => {

@@ -9,7 +9,7 @@ Telegram 聊天機器人：**電腦上的轉接站**向 Telegram 拿訊息、印
 | [`relay/relay.js`](relay/relay.js) | **轉接站程式** (在你的電腦上跑，每一題都印在視窗上) |
 | [`appsscript.json`](appsscript.json) | GAS 專案設定 (台北時區、網頁應用程式權限) |
 | `src/` | `Code.gs` 的原始碼，依功能分檔 (clasp 推送的是這裡) |
-| `test/` | 自動測試 (`npm test`，86 項) |
+| `test/` | 自動測試 (`npm test`，87 項) |
 
 **文件**：[CHANGELOG](CHANGELOG.md) 版本紀錄・[DECISIONS](DECISIONS.md) 架構決策・[KNOWN_ISSUES](KNOWN_ISSUES.md) 已知問題・[WORKFLOW_GUIDE](WORKFLOW_GUIDE.md) 開發與部署流程・[AGENTS](AGENTS.md) 程式規範
 
@@ -63,7 +63,7 @@ Telegram 聊天機器人：**電腦上的轉接站**向 Telegram 拿訊息、印
    1. 「部署 → 新增部署作業 → 網頁應用程式」：執行身分「我」、存取權「**所有人**」
    2. 複製 `/exec` 結尾的網址，填入指令碼屬性 `WEBHOOK_URL`
    3. 執行 `setWebhook` (會自動產生 `WEBHOOK_SECRET`、註冊指令選單)
-   4. 瀏覽器開啟 `/exec` 網址，看到 `… is running. v2.2` 代表部署的是新版
+   4. 瀏覽器開啟 `/exec` 網址，看到 `… is running. v2.3` 代表部署的是新版
 
    > 改了程式後：`npm run push`，再「部署 → 管理部署作業 → 編輯 (鉛筆) → 版本：**新版本** → 部署」，網址不變。
    > 部署作業綁定的是「當時的版本」，只 push 不建立新版本，網址跑的還是舊程式。
@@ -108,6 +108,7 @@ npm run relay
 
 | 指令 | 用途 |
 |---|---|
+| `npm run mode` | 查 bot 目前是轉接站模式還是 GAS 獨立模式 (Telegram webhook 狀態、本機轉接站程序、GAS 版本) |
 | `npm run simulate` | 不接 Telegram，在終端機直接打字問 bot (只需要 `GEMINI_API_KEY`) |
 | `npm test` | 自動測試 (不連網、不需金鑰) |
 | `npm run build` | 修改 `src/` 後重新產生 `Code.gs` |
@@ -127,7 +128,7 @@ npm run relay
 | 資料 | 本機 JSON 檔 | **Google 試算表** (對話、配額、日誌) |
 | 設定與金鑰 | `.env` | GAS **指令碼屬性**；轉接站 `.env` 只放 Telegram Token 與 GAS 網址 (不進版控) |
 | 程式語言 | Python | JavaScript：GAS (V8) + 轉接站 (Node.js，零套件) |
-| 測試 | pytest | Node 內建 test runner，86 項 (模擬 GAS 環境，不連網) |
+| 測試 | pytest | Node 內建 test runner，87 項 (模擬 GAS 環境，不連網) |
 
 細節：
 
@@ -149,6 +150,25 @@ npm run relay
 **電腦：轉接站印出這一題、GAS 的搜尋過程與回覆**
 
 ![轉接站畫面](docs/relay.png)
+
+### 沒開轉接站 (GAS 獨立模式)
+
+轉接站關閉時 Telegram 直接把訊息送到 GAS，一樣能搜尋、附來源回答：
+
+![GAS 獨立模式](docs/standalone.png)
+
+- **查 東華大學陳文盛老師 115-1 學期開什麼課**：讀取課程網頁內文，完整列出 8 門課
+- **查 2026年的諾貝爾獎得主名單**：整理六大獎項得主與得獎原因
+
+> 第一題 12:27 送出、12:34 才回答：那時 webhook 回應還是 `ContentService`，被 GAS 302 轉址，Telegram 一直重試 (KNOWN_ISSUES ISSUE-001)；12:33 部署修正後立刻補答。第二題 (12:35) 是修正後送出，正常回答。
+
+#### 怎麼證明當時沒開轉接站
+
+| 證據 | 怎麼取得 | 為什麼能證明 |
+|---|---|---|
+| Telegram 的 webhook 狀態 | `npm run mode` | 顯示「【GAS 獨立模式】」與 webhook 指向 GAS。webhook 設定期間 Telegram 拒絕 getUpdates (409 Conflict)，轉接站不可能拿到訊息；轉接站一啟動就會移除 webhook |
+| GAS 執行紀錄 | GAS 編輯器左側「執行作業」→ 點該時間的 `doPost` | 紀錄第一行是 `📨 來源：Telegram webhook (GAS 獨立模式)`；轉接站送來的會是 `🛰️ 來源：轉接站` |
+| 本機沒有轉接站程序 | `npm run mode` 的「本機轉接站程序：沒有」 | 電腦上沒有 `relay/relay.js` 在跑 |
 
 ## ⚙️ 指令碼屬性 (設定)
 
@@ -180,7 +200,7 @@ npm run relay
 
 | 現象 | 排查 |
 |---|---|
-| 轉接站顯示「收到網頁而不是 JSON」 | 網頁應用程式存取權不是「所有人」，或部署的不是新版本 (開 `/exec` 網址看版本字樣是否為最新，目前 `v2.2`)。學校帳號若只能選「網域內使用者」，請改用個人 Gmail |
+| 轉接站顯示「收到網頁而不是 JSON」 | 網頁應用程式存取權不是「所有人」，或部署的不是新版本 (開 `/exec` 網址看版本字樣是否為最新，目前 `v2.3`)。學校帳號若只能選「網域內使用者」，請改用個人 Gmail |
 | 轉接站顯示「token 不符」 | `.env` 的 `WEBHOOK_SECRET` 要和指令碼屬性完全相同 |
 | 轉接站顯示 `Conflict` | 有另一個轉接站或 W6 Python 版在跑 (同一個 Token 只能有一個程式拿訊息) |
 | bot 不回 | 轉接站有沒有在跑；沒有時 webhook 是否指向 GAS (`getWebhookInfo`，轉接站異常結束時不會自動設回，見 KNOWN_ISSUES ISSUE-005) |

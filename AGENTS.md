@@ -45,7 +45,7 @@
 | `src/Diagnostics.js` | GAS 編輯器用的檢查與模擬 | `checkEnv()`, `testGemini()`, `testSearch()`, `simulate()` |
 | `relay/relay.js` | 轉接站 (Node，零套件，用 curl) | `createRelay()`, `loadEnv()`, `validateEnv()` |
 | `dev/gasShim.js` | 在 Node 模擬 GAS 全域物件；curl 版 UrlFetchApp | `loadGas()`, `curlFetch()`, `makeResponse()` |
-| `dev/build.js` / `dev/simulate.js` | 產生 `Code.gs` / 本機互動模擬 | `buildCode()` |
+| `dev/build.js` / `dev/simulate.js` / `dev/mode.js` | 產生 `Code.gs` / 本機互動模擬 / 查詢目前運作模式 | `buildCode()` |
 
 ## 4. 程式碼規範
 
@@ -110,7 +110,7 @@
 ## 7. 驗證
 
 ```bash
-npm test          # 86 項：格式、搜尋解析、Gemini、儲存、端對端 (假網路)、轉接站、Code.gs 同步
+npm test          # 87 項：格式、搜尋解析、Gemini、儲存、端對端 (假網路)、轉接站、Code.gs 同步
 npm run build     # 修改 src/ 後重新產生 Code.gs (否則 npm test 失敗)
 npm run simulate  # 本機真的連 Gemini 與搜尋 (需 .env 的 GEMINI_API_KEY)
 ```

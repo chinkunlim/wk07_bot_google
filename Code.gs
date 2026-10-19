@@ -1479,6 +1479,8 @@ function doPost(e) {
       return webhookResponse_('forbidden');
     }
     update = JSON.parse(e.postData.contents);
+    // 執行作業的紀錄可看出這則是從哪裡來的 (證明當時是 GAS 獨立模式)
+    console.log(`📨 來源：Telegram webhook (GAS 獨立模式)，update ${update.update_id}`);
     if (isDuplicateUpdate(update.update_id)) {
       console.log(`重複的 update ${update.update_id}，略過`);
       return webhookResponse_('ok');
@@ -1507,6 +1509,7 @@ function relayDoPost_(e) {
   let result;
   try {
     const update = JSON.parse((e.postData && e.postData.contents) || '{}');
+    console.log(`🛰️ 來源：轉接站，update ${update.update_id}`);
     result = relayAsk(e.parameter.token, update);
   } catch (err) {
     console.error(`轉接站請求處理失敗: ${err.stack || err}`);
@@ -1517,7 +1520,7 @@ function relayDoPost_(e) {
 
 /** 健康檢查：瀏覽器開啟 Web App 網址會看到這段文字 (版本字樣用來確認部署的是新版) */
 function doGet() {
-  return ContentService.createTextOutput('Telegram AI Bot (Google Apps Script) is running. v2.2');
+  return ContentService.createTextOutput('Telegram AI Bot (Google Apps Script) is running. v2.3');
 }
 
 /**
